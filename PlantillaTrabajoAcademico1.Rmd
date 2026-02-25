@@ -1,0 +1,120 @@
+---
+title: "Diabetes"
+author: "Rubén Saiz López,
+         Lucia del Carmen Fito Fito,
+         Ivan Navarro Martínez,
+         Isabelle Archer 
+         (Grupo B1-08)"
+         
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, cache = FALSE, include = TRUE, warning = FALSE)
+library(tinytex)
+```
+
+# Exploración y preparación de la BBDD [3 páginas máximo]
+
+## Descripción y naturaleza de las variables
+
+<!-- Incluir tabla con las variables, su descripción y el tipo de variable (numérica, categórica nominal, categórica ordinal, identificador, fecha, etc.) -->
+
+<!-- Indicar el número de observaciones iniciales en la BBDD. -->
+
+```{r Base Datos}
+load("09B_Diabetes.RData") 
+```
+
+```{r}
+Diabetes_B
+```
+
+Al cargar los datos de la tabla "Diabetes_B" vemos que tiene un total de 371 observaciones iniciales y 13 variables distintas.
+
+Despues de cargar los datos, realizamos una tabla en la que exponemos las variables de la BBDD, hacemos una pequeña descripcion de estas y las clasificamos segun su tipo de variable.
+
+```{r tabla_variables}
+tabla_variables <- data.frame(
+  Variable = c(
+    "diabetes", "vegdiet", "nmeals",
+    "pregnant", "glucose", "pressure", "triceps", "insulin",
+    "mass", "pedigree", "age", "cholesterol",
+    "triglycerides", "leptin", "CRP"
+  ),
+  
+  Descripcion = c(
+    "Estado del paciente con respecto a la diabetes (neg = Sano, pos = Afectado).",
+    "Alimentación del paciente en base a una dieta vegana (Yes = Vegano, No = Dieta omnívora).",
+    "Número de comidas diarias.",
+    "Número de embarazos previos de la paciente.",
+    "Concentración de glucosa en plasma (mg/dL) tras una prueba de tolerancia oral.",
+    "Presión arterial diastólica (mm Hg).",
+    "Grosor del pliegue cutáneo del tríceps (mm), utilizado para estimar la grasa corporal total.",
+    "Niveles de insulina sérica a las 2 horas de la prueba (μg/ml).",
+    "Índice de Masa Corporal.",
+    "Puntuación que sintetiza la carga genética basada en la historia familiar.",
+    "Edad de la paciente en años.",
+    "Niveles de colesterol total en sangre (mg/dL).",
+    "Niveles de triglicéridos en sangre (mg/dL).",
+    "Niveles de leptina sérica (ng/mL). Hormona que regula la saciedad y el gasto energético.",
+    "Proteína C Reactiva en sangre (mg/L). Marcador de inflamación."
+  ),
+  
+  Tipo_Variable = c(
+    "Categórica Nominal",
+    "Categórica Nominal",
+    "Numérica Discreta",
+    "Numérica Discreta",
+    "Numérica Continua",
+    "Numérica Continua",
+    "Numérica Continua",
+    "Numérica Continua",
+    "Numérica Continua",
+    "Numérica Continua",
+    "Numérica Discreta",
+    "Numérica Continua",
+    "Numérica Continua",
+    "Numérica Continua",
+    "Numérica Continua"
+  ),
+  
+  stringsAsFactors = FALSE
+)
+
+# Ver tabla
+tabla_variables
+
+
+```
+
+## Análisis descriptivo
+
+<!-- Incluir resultados que muestren posibles anomalías detectadas e indicar cómo se han corregido. -->
+
+<!-- Si se elimina alguna observación o variable, indicarlo claramente y justificarlo. -->
+
+# Análisis de Componentes Principales [5 páginas máximo]
+
+## Tratamiento de los datos
+
+<!-- Selección de variables a incluir en el modelo? Centrado y escalado? Transformación de variables? -->
+
+## Selección del número de componentes principales
+
+## Validación del modelo
+
+<!-- Detección de valores anómalos y decisiones tomadas a partir de los mismos. -->
+
+## Interpretación del modelo
+
+<!-- Interpretación del gráfico de scores y de loadings o de variables. -->
+
+## Conclusiones
+
+# Reglas de asociación [OPCIONAL. 2 páginas máximo]
+
+# Análisis Factorial de Correspondencias [OPCIONAL. 2 páginas máximo]
