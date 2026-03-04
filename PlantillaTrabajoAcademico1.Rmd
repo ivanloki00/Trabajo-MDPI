@@ -5,16 +5,12 @@ date: "`r Sys.Date()`"
 output: pdf_document
 ---
 
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, cache = FALSE, include = TRUE, warning = FALSE)
 library(tinytex)
 ```
 
-
-
-# Exploración y preparación de la BBDD  [3 páginas máximo]
-
+# Exploración y preparación de la BBDD
 
 ## Descripción y naturaleza de las variables
 
@@ -43,16 +39,14 @@ rownames(descDiabetes) = descDiabetes$variable
 descDiabetes
 ```
 
-La base de datos tiene `r nrow(Diabetes_B)` observaciones iniciales. 
-
+La base de datos tiene 371 observaciones iniciales.
 
 ## Análisis descriptivo
 
-<!-- Incluir resultados que muestren posibles anomalías detectadas e indicar cómo se han corregido. -->
-
-```{r resumen numericas, echo=TRUE}
+```{r resumen numericas}
 summary(Diabetes_B[,descDiabetes$variable[descDiabetes$tipo == "numerical"]])
 ```
+
 ```{r variabilidad}
 # Variabilidad de las variables numéricas (desviación típica)
 mySD = apply(Diabetes_B[,descDiabetes$variable[descDiabetes$tipo == "numerical"]], 2, sd)
@@ -61,9 +55,11 @@ myMU = colMeans(Diabetes_B[,descDiabetes$variable[descDiabetes$tipo == "numerica
 myCV = mySD/myMU
 sort(myCV)
 ```
+
 ```{r binarias}
 apply(Diabetes_B[,descDiabetes$variable[descDiabetes$tipo == "categorical"]], 2, table, useNA = "i")
 ```
+
 ```{r}
 apply(Diabetes_B[,descDiabetes$variable[descDiabetes$tipo == "categorical"]], 2,
       function (x) round(100*table(x)/sum(table(x)), 2))
@@ -75,42 +71,78 @@ Como todas las variables varian suficientemente, se las deja todas.
 #par(mar = c(9,4,2,2))
 boxplot(Diabetes_B[,descDiabetes$variable[descDiabetes$tipo == "numerical"]], log = "y", las = 2, ylim = c(1e-1, 1e3))
 ```
+%%%%%%%%%%%%%%% IVAN %%%%%%%%%%%%%%%%%%%%%%%% (por aqui empiezo, siguiendo un poco la info d antes)
 
-<!-- Si se elimina alguna observación o variable, indicarlo claramente y justificarlo. -->
+Una vez que hemos analizado las variables una por una (univariante) y hemos comprobado la ausencia de valores faltantes y constantes, el siguiente paso crítico en la preparación de una BBDD es entender **cómo se relacionan las variables entre sí**. Esto nos permite detectar dos cosas vitales:
 
+1\. **Redundancia (Colinealidad):** Si dos variables numéricas están muy correlacionadas (proveen la misma información), podríamos eliminar una de ellas para simplificar el modelo predictivo.
 
+2.  **Asociación con el objetivo:** Observar si variables concretas discriminan bien nuestra variable objetivo (`diabetes`). 
 
-# Análisis de Componentes Principales  [5 páginas máximo]
+### Matriz de Correlación
+Las matrices de correlación nos calculan el coeficiente de Pearson entre un abanico continuo de -1 (relación inversa total) a 1 (relación directa total). Las correlaciones por encima de 0.7 nos advierten de redundancias importantes.
 
+```{r correlacion, echo=TRUE}
+# 1. Filtramos solo las variables que son numéricas
+nums <- sapply(Diabetes_B, is.numeric)
+data_num <- Diabetes_B[, nums]
+# 2. Calculamos la matriz de correlación
+cor_mat <- cor(data_num, use = "complete.obs")
+# 3. Vamos a filtrar la matriz e imprimir solo las parejas con Correlación Mayor a 0.5 (Alta correlación)
+cor_mat[lower.tri(cor_mat, diag=TRUE)] <- NA
+high_cor <- which(abs(cor_mat) > 0.5, arr.ind = TRUE)
+cat("Parejas de Variables Altamente Correlacionadas\n")
+for(i in 1:nrow(high_cor)){
+    cat(rownames(cor_mat)[high_cor[i,1]], "-", colnames(cor_mat)[high_cor[i,2]], 
+        ":", round(cor_mat[high_cor[i,1], high_cor[i,2]], 2), "\n")
+}
+```
+
+-   `pregnant - age : 0.70` A mayor edad, es predecible una mayor cantidad de embarazos en el histórico
+
+-   `triceps - mass : 0.66` El grosor del pliegue cutáneo del tríceps avanza predeciblemente con la masa corporal general
+
+-   `mass - CRP : 0.61` La proteína C Reactiva escala de la mano con el Índice de Masa Corporal
+
+-   `glucose - insulin : 0.59` Niveles altos de glucosa correlacionan con niveles de insulina
+
+La pareja **pregnant-age** se acerca al umbral crítico del 0.75-0.80, una de las dos variables podría llegar a eliminarse.
+
+###Análisis Bivariado 
+Ahora vamos a visualizar rápidamente el comportamiento que tienen las variables numéricas clave en función a nuestra clase de interés: si el sujeto padece diabetes (positiva o negativa).
+```{r}
+# Visualizamos la glucosa e insulina partidas por el diagnóstico de diabetes
+par(mfrow = c(1,2))
+boxplot(glucose ~ diabetes, data = Diabetes_B, 
+        main = "Glucosa vs Diabetes", 
+        col = c("lightblue", "salmon"), 
+        xlab = "Diágnóstico", ylab = "Glucosa")
+boxplot(age ~ diabetes, data = Diabetes_B, 
+        main = "Edad vs Diabetes", 
+        col = c("lightblue", "salmon"), 
+        xlab = "Diagnóstico", ylab = "Edad")
+# Comprobación de las medias exactas para Glucosa
+aggregate(glucose ~ diabetes, data = Diabetes_B, FUN = mean)
+```
+
+# Análisis de Componentes Principales
 
 ## Tratamiento de los datos
 
 <!-- Selección de variables a incluir en el modelo? Centrado y escalado? Transformación de variables? -->
 
-
 ## Selección del número de componentes principales
-
-
-
 
 ## Validación del modelo
 
 <!-- Detección de valores anómalos y decisiones tomadas a partir de los mismos. -->
 
-
 ## Interpretación del modelo
 
 <!-- Interpretación del gráfico de scores y de loadings o de variables. -->
 
-
 ## Conclusiones
 
+# Reglas de asociación [OPCIONAL. 2 páginas máximo]
 
-
-
-# Reglas de asociación  [OPCIONAL. 2 páginas máximo]
-
-
-
-# Análisis Factorial de Correspondencias  [OPCIONAL. 2 páginas máximo]
-
+# Análisis Factorial de Correspondencias [OPCIONAL. 2 páginas máximo]

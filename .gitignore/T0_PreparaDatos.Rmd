@@ -1,0 +1,381 @@
+---
+title: "Práctica guiada: Preparación de Bases de Datos"
+author: "Sonia Tarazona"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    number_sections: true
+    toc_depth: 2
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+---
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+# Lectura de datos
+
+Cargamos los datos de ejemplo de Toyota Corolla.
+
+**IMPORTANTE:** Los datos siempre se deben cargar o leer dentro del propio R Markdown.
+
+```{r datos}
+# toyota = read.csv("archivos de datos/ToyotaCorolla.csv")
+# Comentamos el código anterior porque no es la mejor opción para leer la BBDD,
+# ya que conserva el ID como variable de la BBDD y, dado que no es una variable a analizar,
+# es mejor utilizarlo como nombres de filas, que es lo que hace el siguiente comando:
+toyota = read.csv("archivos de datos/ToyotaCorolla.csv", row.names = 1, 
+                  as.is = TRUE)
+# dim(toyota)  # Con este comando podemos ver el número de filas y columnas de una matriz o data.frame
+# head(toyota, 3)  # Para mostrar las primeras observaciones de la BBDD, 3 en este caso
+```
+
+Se han registrado `r ncol(toyota)` variables para `r nrow(toyota)` vehículos Toyota.
+
+
+
+# Tipos de variables
+
+Creamos una tabla con las variables en filas que incluya una columna con el tipo de variable. Esta tabla auxiliar la podremos utilizar después para seleccionar variables de un determinado tipo y explorarlas o analizarlas, por lo que es muy recomendable cuando tenemos muchas variables y, además, son de distinta naturaleza por lo que requieren distinto tratamiento.
+
+Normalmente, clasificaremos a las variables en los siguientes tipos:
+
+* **Numérica continua**
+
+* **Numérica discreta**
+
+* **Categórica nominal**. Cuando necesitemos incluirlas en un modelo estadístico que requiera variables numéricas, se pueden convertir a variables binarias 0-1 (variables *dummy*).
+
+* **Categórica ordinal**. Tienen la ventaja de que, en algunos análisis, se podrán utilizar como variables numéricas.
+
+* **Fecha**. Se suelen transformar a una variable numérica. Por ejemplo, calcular la edad a partir de la fecha de nacimiento.
+
+* **Texto**. En este curso no las podremos utilizar. Requieren de técnicas especializadas como el Análisis de Sentimiento o el Procesamiento de Lenguaje Natural (NLP).
+
+* **Otras**
+
+
+Esta base de datos está compuesta únicamente por variables numéricas (no necesitamos distinguir de momento entre discretas y continuas) y categóricas nominales. Muchas de las variables categóricas ya están recodificadas como variables 0-1, por lo que las distinguiremos como *binary*. Así pues, en nuestra tabla auxiliar, clasificaremos las variables numéricas como "numerical" y las categóricas (son todas nominales, así que no distinguiremos) como "categorical" o "binary" (en el caso de que hayan sido ya recodificadas a variables 0-1).
+
+
+```{r tipos, echo = TRUE}
+descToyo = data.frame("variable" = colnames(toyota),
+                      "tipo" = c("text", rep("numerical", 2), rep("date", 2), 
+                                 "numerical", "categorical",
+                                 "numerical", "binary", "categorical", "binary",
+                                 rep("numerical", 6), "binary", "binary", "numerical",
+                                 rep("binary", 18)), stringsAsFactors = FALSE)
+rownames(descToyo) = descToyo$variable
+descToyo
+```
+
+**IMPORTANTE:** Si añadimos o quitamos variables de la BBDD, es absolutamente necesario añadirlas o quitarlas también en esta tabla auxiliar porque, para que nos sea útil y no nos lleve a error, debemos tener siempre en ambos objetos las mismas variables y en el mismo orden.
+
+
+
+# Variables a excluir de la BBDD
+
+## Variables que no se pueden incluir en el análisis
+
+Crearemos una nueva base de datos descartando, si las hay, variables tipo texto, indicadores u otras variables que no se puedan analizar. En caso de eliminar variables, siempre hay que actualizar al mismo tiempo la tabla auxiliar que contiene el tipo de variables. 
+
+En nuestro caso, no necesitamos descartar el identificador del vehículo porque al leer los datos, lo hemos utilizado como nombre de filas de la base de datos (**RECOMENDABLE**). Sí que descartaremos el modelo del vehículo porque tenemos muchísimos modelos diferentes (se puede considerar una variable tipo texto o una variable categórica nominal con demasiadas categorías para poder ser analizada). Otra opción sería tratar de reagrupar los modelos de Toyota en modelos más generales, de forma que al reducir el número de categorías de la variable, nos resultara útil en el análisis.
+
+También descartaremos mes y año de fabricación del vehículo, puesto que estas dos variables ya se han utilizado para calcular la "edad" del vehículo (*Age_08_04*) y, por tanto, son redundantes.
+
+
+```{r quitar, echo = TRUE}
+toyota2 = subset(toyota, select = -c(Model, Mfg_Month, Mfg_Year))
+descToyo = descToyo[colnames(toyota2),]
+table(descToyo$tipo)
+```
+
+
+## Variables constantes o casi constantes
+
+Comprobaremos ahora si existe alguna variable que no varía (o que varía muy poco) y la eliminaremos también de la base de datos, ya que no se tratará de una variable aleatoria y no tiene sentido incluirla en el análisis estadístico. Esto se comprueba de forma diferente para las variables numéricas y para las variables categóricas.
+
+En el caso de las variables numéricas, podemos calcular su desviación típica. Como la desviación típica depende de las unidades de medida y de la magnitud de la variable, es más aconsejable utilizar el coeficiente de variación.
+
+Para las variables categóricas, obtendremos una tabla de frecuencias para comprobar si toman distintos valores.
+
+```{r ctes, echo = TRUE}
+## Numéricas
+summary(toyota2[,descToyo$variable[descToyo$tipo == "numerical"]])
+# Variabilidad de las variables numéricas (desviación típica)
+mySD = apply(toyota2[,descToyo$variable[descToyo$tipo == "numerical"]], 2, sd)
+# Mejor calcular el coeficiente de variación porque no depende de las unidades o magnitud de las variables
+myMU = colMeans(toyota2[,descToyo$variable[descToyo$tipo == "numerical"]])
+myCV = mySD/myMU
+sort(myCV)
+
+## Categóricas
+apply(toyota2[,descToyo$variable[descToyo$tipo == "binary"]], 2, table, useNA = "i")
+
+apply(toyota2[,descToyo$variable[descToyo$tipo == "categorical"]], 2, table, useNA = "i")
+
+apply(toyota2[,descToyo$variable[descToyo$tipo == "categorical"]], 2,
+      function (x) round(100*table(x)/sum(table(x)), 2))
+
+
+## Eliminación de variables
+toyota2 = subset(toyota2, select = -Cylinders)
+descToyo = descToyo[colnames(toyota2),]
+```
+
+Como podemos observar para las variables numéricas, tanto en su mínimo y máximo, como en el coeficiente de variación igual a 0, la variable *Cylinders* es constante, por lo que claramente se elimina de la base de datos y se actualiza la tabla auxiliar. 
+
+La variable *Gears* no es constante pero varía muy poco, lo cual es lógico porque casi todos los coches tendrán 5 marchas. En este caso, se decide conservar esta variable en la base de datos por si el número de marchas fuera determinante para explicar el precio del vehículo.
+
+En cuanto a las variables categóricas, la variable que más llama la atención es *Parking_Assistant*, ya que solo hay 4 vehículos que lo tengan. Se podría considerar excluirla de la base de datos por ser "casi" constante pero la dejaremos de momento por si esta variable también fuera determinante para el precio del vehículo. 
+
+También se observa que la variable *Color* tiene muchas categorías (lo que puede dificultar su análisis e interpretación) y algunas de ellas con muy baja frecuencia. Se estudiará más adelante como recodificar esta variable para agrupar las categorías de forma que ninguna tenga una frecuencia demasiado baja.
+
+
+
+
+# Valores inconsistentes o anómalos
+
+Analizaremos ahora si alguna variable tiene valores inconsistentes, es decir, valores que no son posibles dentro del rango de definición de la variable y que por tanto se deben a un error. En ese caso, estos valores se sustituirán por NA convirtiéndose en valores faltantes o perdidos. Los valores inconsistentes se pueden observar tanto en variables numéricas como categóricas.
+
+También estudiaremos la existencia de posibles valores anómalos en las variables numéricas. A veces, estos valores anómalos pueden deberse a un error (serían valores inconsistentes y se sustituirían por NA).Pero otras veces, los valores anómalos son valores posibles pero muy atípicos o extremos. En este último caso, debemos tomar la decisión de mantener la observación anómala en el modelo o eliminarla (no se reemplaza el valor anómalo por NA, sino que se elimina el registro completo).
+
+En esta práctica, estudiaremos los valores anómalos desde el punto de vista univariante (se analiza cada variable por separado). Veremos en la Práctica 1 cómo utilizar el Análisis de Componentes Principales (PCA) para estudiar los valores anómalos desde el punto de vista multivariante.
+
+El resumen descriptivo de las variables categóricas (tablas de frecuencias anteriores) no mostró ningún valor inconsistente.
+
+A continuación se estudian gráficamente las variables numéricas. En primer lugar se realiza un gráfico de cajas y bigotes con todas las variables numéricas. Sin embargo, dado que cada una tiene rangos diferentes, se representan los datos en escala logarítmica para mitigar un poco dichas diferencias y poder visualizarlas mejor. Después, realizaremos gráficos individuales para algunas de las variables que más llaman nuestra atención en este gráfico de cajas y bigotes múltiple.
+
+```{r anomalos, echo = TRUE}
+par(mar = c(9,4,2,2))
+boxplot(toyota2[,descToyo$variable[descToyo$tipo == "numerical"]], log = "y", las = 2)
+
+## CC 
+par(mfrow = c(1,2))   # mfcol
+hist(toyota2$CC, 50)
+boxplot(toyota2$CC, xlab = "CC")
+## Gears (por ser discreta con pocos valores diferentes, utilizaremos un gráfico de barras)
+barplot(table(toyota2$Gears))
+## Guarantee Period
+par(mfrow = c(1,2))
+hist(toyota2$Guarantee_Period, 50)
+boxplot(toyota2$Guarantee_Period, xlab = "Guarantee Period")
+```
+
+
+Se puede observar un valor muy anómalo en la variable CC. Entendemos que el valor `r max(toyota2$CC)` es realmente un error (valor inconsistente) y lo reemplazaremos por un valor desconocido o faltante (en R, NA). 
+
+```{r anomalos2, echo = TRUE}
+toyota2[which.max(toyota2$CC), "CC"] = NA
+summary(toyota2$CC)
+```
+
+En el resto de variables no se detectan inconsistencias y mantendremos las observaciones anómalas en la BBDD.
+
+
+
+
+
+# Valores faltantes 
+
+## Imputación por un valor como la media o la mediana
+
+Generaremos en primer lugar una tabla resumen con el número y porcentaje de valores faltantes en cada variable de la base de datos, mostrando solo las variables que tienen valores faltantes.
+
+```{r missing, echo = TRUE}
+numNA = apply(toyota2, 2, function(x) sum(is.na(x)))
+percNA = round(100*apply(toyota2, 2, function(x) mean(is.na(x))), 2)
+tablaNA = data.frame("tipo" = descToyo[,-1], numNA, percNA)
+tablaNA[tablaNA$numNA > 0,]
+```
+
+Dado que solo tenemos un valor faltante en toda la BBDD, podemos utilizar en esta ocasión la imputación por su media o mediana, aunque en general no es recomendable si tenemos varios valores faltantes en la misma variable, ya que reduciríamos drásticamente su variabilidad y tampoco sería realista imputar todos los faltantes con el mismo valor.
+
+En nuestro caso, imputaremos el único valor faltante en la variable *CC* con la mediana de los valores no faltantes de esa variable:
+
+```{r missing2, echo = TRUE}
+toyota3 = toyota2
+toyota3$CC[is.na(toyota3$CC)] = median(toyota3$CC, na.rm = TRUE)
+boxplot(data.frame(missing = toyota2$CC, imputed = toyota3$CC))
+```
+
+
+
+## Imputación mediante la librería mice (Ejemplo *agingdata*)
+
+Cuanto tenemos varios valores faltantes es más aconsejable utilizar métodos de imputación que tengan en cuenta la distribución de los valores observados en todas las variables para predecir los valores faltantes. Una buena opción es la librería *mice*, que admite tanto variables numéricas como categóricas  e imputa distintos tipos de valores faltantes (no solo MCAR), entre otras muchas funcionalidades.
+
+Para aprender a utilizar la librería *mice*, tomaremos los datos de ejemplo *agingdata.RData*, que incluyen las variables: Education, Income, Perceived satisfaction of social support, Social coping, Total life events scale, Depression scale, and Self-rated help.
+
+Montpetit A, Bergeman CS (2007). “Dimensions of control: Mediational analyses of the stress Chealth relationship.” Personality and Individual Differences, 43, 2237 - 2248.
+
+Cargamos los datos y hacemos un pequeño resumen descriptivo para familiarizarnos con ellos. Como se observa a continuación, podemos considerar numéricas todas las variables. En caso de que tuviéramos alguna variable categórica, bastaría con convertirla a factor para que *mice* la trate adecuadamente.
+
+```{r aging1, echo = TRUE}
+load("archivos de datos/agingdata.RData", verbose = TRUE)
+dim(agingdata)
+head(agingdata)
+summary(agingdata)
+```
+
+
+Generamos una tabla resumen con el número y porcentaje de valores faltantes en cada variable de la base de datos. Todas las variables tienen valores faltantes. La más preocupante es *coping* con más de un 30%. Deberíamos excluirla pero antes estudiaremos los valores faltantes por sujeto.
+
+```{r aging2, echo = TRUE}
+numNA = apply(agingdata, 2, function(x) sum(is.na(x)))
+percNA = round(100*apply(agingdata, 2, function(x) mean(is.na(x))), 2)
+tablaNA = data.frame("Variable" = colnames(agingdata), numNA, percNA)
+tablaNA
+```
+
+
+Generamos otra tabla resumen con el número y porcentaje de valores faltantes en cada sujeto de la base de datos. Como hay muchos sujetos con valores faltantes, resumiremos la información en un gráfico de barras. Vemos que hay sujetos con valores faltantes en la mayoría de las variables, por lo que convendría excluirlos de la BBDD.
+
+```{r aging3, echo = TRUE}
+numNA = apply(agingdata, 1, function(x) sum(is.na(x)))
+percNA = round(100*apply(agingdata, 1, function(x) mean(is.na(x))), 2)
+tablaNA2 = data.frame(numNA, percNA)
+summary(tablaNA2$numNA)
+barplot(table(tablaNA2$percNA), xlab = "% Valores faltantes", ylab = "Número de casos",
+        main = "agingdata")
+```
+
+
+También podemos explorar la distribución de valores faltantes con la librería *mice*, que es la que utilizaremos para la imputación.
+
+```{r aging6, echo = TRUE, fig.height=10,fig.width=8, message=FALSE}
+library(mice)
+patrones = md.pattern(agingdata, rotate.names = TRUE)
+```
+
+
+
+En este caso, dado que tenemos muy pocas variables y bastantes sujetos, eliminaremos primero de la BBDD aquellos sujetos con más del 20% de valores faltantes. A continuación, veremos cómo queda el porcentaje de valores faltantes por variable en esta nueva BBDD. 
+
+**NOTA:** Dependiendo de la base de datos, puede ser necesario incrementar un poco este límite del 20% para no perder variables relevantes para el estudio, o incluso reducirlo si queremos ser conservadores e imputar lo menos posible. 
+
+```{r aging5, echo = TRUE}
+edad = agingdata
+edad = edad[tablaNA2$percNA <= 20,]
+varMiss = round(100*apply(edad, 2, function(x) mean(is.na(x))), 2)
+varMiss
+patrones = md.pattern(edad, rotate.names = TRUE)
+```
+
+
+Al eliminar los sujetos con más del 20% de valores faltantes, se obtiene que la variable con mayor porcentaje de valores faltantes sigue siendo "coping" pero ahora tiene un 21.18%, que se puede considerar aceptable (cercano al 20% que se suele tomar como límite), por lo que se decide no eliminarla.
+
+Imputaremos los valores faltantes restantes utilizando la librería *mice* y, dado que todas nuestras variables imputadas son numéricas, generaremos gráficos de cajas y bigotes para mostrar cómo cambia la distribución de los valores de cada variable con valores faltantes (todas en este caso) antes y después de la imputación.
+
+```{r aging7, echo = TRUE, fig.width=8, fig.height=10}
+edadImp = mice(edad, seed = 123, m = 5, print = FALSE, method = NULL) # con m=5 generamos 5 matrices imputadas
+mice::stripplot(edadImp)
+edadImp = complete(edadImp, 4)  # elegimos la cuarta matriz imputada
+summary(edadImp)
+par(mfrow = c(2,4))
+for (i in 1:ncol(edad)) {
+  boxplot(list("antes" = edad[,i], "después" = edadImp[,i]), 
+          col = heat.colors(2), main = colnames(edad)[i], las = 2)
+}
+```
+
+
+Como podemos observar, la imputación no ha modificado de manera importante las distribuciones de las variables imputadas. Por tanto, podemos utilizar la BBDD *edadImp* para nuestros análisis posteriores.
+
+
+**IMPORTANTE:** Hemos representado todas las variables de la BBDD en los gráficos porque todas tenían valores faltantes. Solo hay que comprobar que la imputación no ha modificado la distribución de las variables que se han imputado, es decir, que tenían originariamente valores faltantes. También hay que tener en cuenta que todas la variables imputadas en este caso eran numéricas. Si se han imputado variables categóricas, en lugar de los gráficos de cajas y bigotes, se puede comprobar que la imputación no ha cambiado la distribución de probabilidad de la variable con tablas de frecuencias relativas (o sus diagramas de barras correspondientes).
+
+
+
+# Transformación y recodificación de variables
+
+**IMPORTANTE:** No siempre es necesario transformar o recodificar variables, depende del tipo de análisis que tengamos previsto hacer y de cómo y para qué vamos a utilizar una variable. A continuación se muestran algunos ejemplos de transformación o recodificación de variables que podrían ser útiles en ciertos casos. 
+
+
+## Transformar variables categóricas a variables 0-1
+
+Si queremos incluir una variable categórica en un modelo que solo acepta variables numéricas (como por ejemplo PCA, clustering, etc.), necesitaremos recodificar la variable categórica a variables numéricas 0-1 para poder incluirla en dicho modelo. Tenemos dos posibilidades. Elegiremos una u otra dependiendo del modelo. La primera es, como se hace en los modelos de regresión lineal clásicos, definir una de las $K$ categorías como referencia y definir variables binarias para las $K-1$ categorías restantes. La segunda posibilidad, para modelos PCA, PLS, clustering, etc. es crear tantas variables binarias como categorías, es decir, $K$. Veamos, por ejemplo, cómo recodificar la variable "Fuel_Type" en tantas variables binarias 0-1 como categorías tiene esta variable:
+
+```{r recodifica1, echo = TRUE}
+mm = model.matrix(~ 0 + Fuel_Type, data = toyota2)
+head(mm)
+```
+
+No se muestra el otro caso (convertir en $K-1$ variables dummy) porque si nuestra variable se convierte a factor en R, los modelos de regresión crearán automáticamente las variables dummy.
+
+
+## Reagrupar categorías poco frecuentes 
+
+A veces tenemos variables categóricas con muchas categorías y algunas de ellas con bajas frecuencias. En eso casos, suele ser recomendable reagrupar las categorías poco frecuentes en una sola. Veamos, por ejemplo, cómo recodificar la variable "Color" para agrupar en una categoría "Others" los colores minoritarios. 
+
+En primer lugar, generaremos un gráfico de barras para visualizar la frecuencia de cada clase. Además, para que sea más ilustrativo, colorearemos cada barra con el propio color de los vehículos.
+
+```{r recodifica2, echo = TRUE}
+ttt = table(toyota2$Color); ttt  # creamos tabla de frecuencias
+colores = tolower(names(ttt))  # pasamos a minúsculas los colores, que es como los tiene R
+colores[7] = "grey95"  # sustituimos los colores que no existen en R
+barplot(ttt, col = colores, las = 2)
+abline(h = nrow(toyota2)/length(colores), lty = 2) # frecuencia media (si todos los colores tuvieran la misma frecuencia)
+agrupar = names(ttt)[which(ttt < nrow(toyota2)/length(colores))] # colores a reagrupar
+sum(toyota2$Color %in% agrupar) # veamos qué frecuencia tendrá la nueva clase que vamos a crear
+toyota2$Color[toyota2$Color %in% agrupar] = "Others"  # reagrupamos en la nueva clase "Others"
+# Generamos de nuevo la tabla de frecuencias y diagrama de barras para ver cómo ha quedado la variable reagrupada
+ttt = table(toyota2$Color); ttt  
+colores = tolower(names(ttt))
+colores[5] = "white"
+barplot(ttt, col = colores, las = 2)
+```
+
+**IMPORTANTE:** La variable "Color" era de tipo *character*. Si hubiera sido de tipo *factor* (o si la convertimos a *factor*), la reagrupación de categorías se hace de forma diferente.  
+
+
+
+## Transformaciones para conseguir normalidad o simetría
+
+En algunas ocasiones, es necesario o recomendable que ciertas variables sigan una distribución aproximadamente normal o, al menos, simétrica. Hay muchas transformaciones para conseguir dicha normalidad o simetría, entre ellas la transformación logarítmica en casos de asimetría positiva.
+
+A continuación, transformaremos logarítmicamente la variable "Guarantee_Period" y representaremos su función de densidad de probabilidad antes y después de la transformación.
+
+```{r transforma, echo = TRUE}
+plot(density(toyota2$Guarantee_Period), main = "Variable original", 
+     col = "red3", lwd = 2, xlab = "Guarantee Period")
+toyota2$Guarantee_Period = log2(toyota2$Guarantee_Period)
+plot(density(toyota2$Guarantee_Period), main = "Variable transformada", 
+     col = "red3", lwd = 2, xlab = "Guarantee Period")
+```
+
+Vemos que, en este caso, no ha funcionado muy bien la transformación logarítmica y tendríamos que buscar otro tipo de transformaciones más sofisticadas.
+
+
+## Convertir una variable numérica en categórica
+
+En general, no es aconsejable "categorizar" variables numéricas porque perdemos información y porque los resultados obtenidos en nuestro análisis pueden depender de la forma en que se "categorice" la variable numérica. Sin embargo, algunos modelos admiten solamente variables categóricas y puede ser necesario hacer esta "categorización" si tenemos unas pocas variables numéricas que queremos incluir en dicho modelo. También a veces, se nos requiere la "categorización" simplemente para facilitar la interpretación y uso de la variable en la práctica, o bien porque está muy admitida la forma de "categorizarla" (los grupos a formar). También puede ser útil categorizar variables numéricas con un exceso de valores faltantes para poder conservar la variable en el modelo.
+
+Hay distintas formas de categorizar una variable numérica:  
+
+1. Que todos los grupos contengan el mismo número de observaciones
+
+2. Que los intervalos en los que dividimos la variable para crear los grupos tengan la misma amplitud.
+
+3. Estudiar la distribución de la variable numérica y buscar puntos de corte adecuados aunque no se consiga un equilibrio perfecto en las observaciones por grupo.
+
+Como ejemplo, categorizaremos la variable "Price" en 3 grupos: low, medium y high, según la tercera opción. En este caso, asignaremos a cada clase un 30%, 40% y 30% de las observaciones, respectivamente.
+
+```{r categoriza, echo = TRUE}
+ccc = toyota2$Price
+hist(ccc, xlab = "Price")
+perce = round(quantile(ccc, probs = c(0, 0.3, 0.7, 1)), 2) # 30%, 40%, 30%
+precioCat = cut(ccc, breaks = perce, labels = c("L", "M", "H"), include.lowest = TRUE)
+table(precioCat, useNA = "a")
+# Veamos qué rangos de precios tiene cada una de las nuevas clases creadas:
+aaa = aggregate(toyota2$Price, by = list(precioCat), range)
+aaa
+```
+
+
+
