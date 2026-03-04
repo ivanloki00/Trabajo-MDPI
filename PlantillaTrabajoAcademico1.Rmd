@@ -124,6 +124,21 @@ boxplot(age ~ diabetes, data = Diabetes_B,
 # Comprobación de las medias exactas para Glucosa
 aggregate(glucose ~ diabetes, data = Diabetes_B, FUN = mean)
 ```
+Al observar los diagramas que genera R y ver la tabla de medias de glucosa (neg: 110.5, pos: 145.3), comprobamos de manera super evidente que la **glucosa es un excelente predictor**. Los enfermos diagnosticados positivamente tienen la línea base de la caja notoriamente elevada y se superponen muy poco con el grueso de pacientes negativos. La edad, sin embargo, muestra cajas mucho más solapadas (impacta menos en el resultado global).
+
+###Análisis Bivariado (Categórica vs. Categórica)
+```{r}
+# Convertimos el texto a factor para poder tabular
+Diabetes_B$vegdiet <- as.factor(Diabetes_B$vegdiet)
+# Creamos una tabla cruzada
+tabla_cruzada <- table(Diabetes_B$vegdiet, Diabetes_B$diabetes)
+# Le agregamos márgenes y mostramos proporciones
+cat("--- Frecuencias Absolutas ---\n")
+print(tabla_cruzada)
+cat("\n--- Proporciones por Fila (Sabiendo la Dieta, ¿qué % es Diabético?) ---\n")
+round(prop.table(tabla_cruzada, 1) * 100, 2)
+``` 
+Se observa con este analisis que la variable `vegdiet` es totalmente **inútil** para predecir si alguien tendrá diabetes. Podría ser candidata a ser desechada sin afectar al aprendizaje general.
 
 # Análisis de Componentes Principales
 
