@@ -144,7 +144,25 @@ Se observa con este analisis que la variable `vegdiet` es totalmente **inútil**
 
 ## Tratamiento de los datos
 
-<!-- Selección de variables a incluir en el modelo? Centrado y escalado? Transformación de variables? -->
+Para la ejecución del Análisis de Componentes Principales utilizaremos la librería `PLSandO`. Como paso preparatorio, extraeremos únicamente las variables numéricas de la BBDD, ya que PCA está diseñado para variables cuantitativas. Además, emplearemos la función `Preparing()` propia de la librería para automatizar la eliminación de variables con muy baja varianza y datos con un gran porcentaje de valores nulos (NAs).
+
+```{r tratamiento datos}
+# Cargamos las librerías necesarias
+library(PLSandO)
+library(gridExtra)
+
+# 1. Filtramos solo las variables numéricas
+num_cols <- sapply(Diabetes_B, is.numeric)
+datos_pca <- Diabetes_B[, num_cols]
+
+# 2. Aplicamos un filtro de homogeneidad y tratamos NAs
+datos_pca_prep <- Preparing(datos_pca, CVfilter = 0.01, excludeNA = 0.2)
+
+# Obtenemos la matriz de datos limpios
+datos_pca_clean <- datos_pca_prep$x
+```
+
+Observando el análisis descriptivo anterior en la sección univariante y bivariante, deducimos que los datos ya están relativamente limpios de NAs y todas las variables superan el umbral de variabilidad del coeficiente de variación mínimo, por lo que nuestros datos quedarán validados de cara a introducirse en el algoritmo y, además, los preparará de forma transparente.
 
 ## Selección del número de componentes principales
 
