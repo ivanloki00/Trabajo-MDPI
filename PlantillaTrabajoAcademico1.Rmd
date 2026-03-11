@@ -14,12 +14,12 @@ library(tinytex)
 
 ## Descripción y naturaleza de las variables
 
-```{r carga datos}
+```{r carga datos, echo=FALSE}
 load("09B_Diabetes.RData")
 Diabetes_B
 ```
 
-```{r tabla descripcion, echo=TRUE}
+```{r tabla descripcion, echo=FALSE}
 descDiabetes = data.frame("variable" = colnames(Diabetes_B),
                       "tipo" = c(rep("numerical", 8), rep("categorical", 2), rep("numerical", 3)),
                       "descripción" = c("Número de embarazos previos de la paciente",
@@ -43,11 +43,11 @@ La base de datos tiene 371 observaciones iniciales.
 
 ## Análisis descriptivo
 
-```{r resumen numericas}
+```{r resumen numericas, echo=FALSE}
 summary(Diabetes_B[,descDiabetes$variable[descDiabetes$tipo == "numerical"]])
 ```
 
-```{r variabilidad}
+```{r variabilidad, echo=FALSE}
 # Variabilidad de las variables numéricas (desviación típica)
 mySD = apply(Diabetes_B[,descDiabetes$variable[descDiabetes$tipo == "numerical"]], 2, sd)
 # Mejor calcular el coeficiente de variación porque no depende de las unidades o magnitud de las variables
@@ -56,18 +56,18 @@ myCV = mySD/myMU
 sort(myCV)
 ```
 
-```{r binarias}
+```{r binarias, echo=FALSE}
 apply(Diabetes_B[,descDiabetes$variable[descDiabetes$tipo == "categorical"]], 2, table, useNA = "i")
 ```
 
-```{r}
+```{r categoricas, echo=FALSE}
 apply(Diabetes_B[,descDiabetes$variable[descDiabetes$tipo == "categorical"]], 2,
       function (x) round(100*table(x)/sum(table(x)), 2))
 ```
 
 Como todas las variables varian suficientemente, se las deja todas.
 
-```{r boxplot}
+```{r boxplot, echo=FALSE}
 #par(mar = c(9,4,2,2))
 boxplot(Diabetes_B[,descDiabetes$variable[descDiabetes$tipo == "numerical"]], log = "y", las = 2, ylim = c(1e-1, 1e3))
 ```
@@ -82,7 +82,7 @@ Una vez que hemos analizado las variables una por una (univariante) y hemos comp
 ### Matriz de Correlación
 Las matrices de correlación nos calculan el coeficiente de Pearson entre un abanico continuo de -1 (relación inversa total) a 1 (relación directa total). Las correlaciones por encima de 0.7 nos advierten de redundancias importantes.
 
-```{r correlacion, echo=TRUE}
+```{r correlacion, echo=FALSE}
 # 1. Filtramos solo las variables que son numéricas
 nums <- sapply(Diabetes_B, is.numeric)
 data_num <- Diabetes_B[, nums]
@@ -110,7 +110,7 @@ La pareja **pregnant-age** se acerca al umbral crítico del 0.75-0.80, una de la
 
 ###Análisis Bivariado 
 Ahora vamos a visualizar rápidamente el comportamiento que tienen las variables numéricas clave en función a nuestra clase de interés: si el sujeto padece diabetes (positiva o negativa).
-```{r}
+```{r bivariado, echo=FALSE}
 # Visualizamos la glucosa e insulina partidas por el diagnóstico de diabetes
 par(mfrow = c(1,2))
 boxplot(glucose ~ diabetes, data = Diabetes_B, 
@@ -127,7 +127,7 @@ aggregate(glucose ~ diabetes, data = Diabetes_B, FUN = mean)
 Al observar los diagramas que genera R y ver la tabla de medias de glucosa (neg: 110.5, pos: 145.3), comprobamos de manera super evidente que la **glucosa es un excelente predictor**. Los enfermos diagnosticados positivamente tienen la línea base de la caja notoriamente elevada y se superponen muy poco con el grueso de pacientes negativos. La edad, sin embargo, muestra cajas mucho más solapadas (impacta menos en el resultado global).
 
 ###Análisis Bivariado (Categórica vs. Categórica)
-```{r}
+```{r bivariado categorico, echo=FALSE}
 # Convertimos el texto a factor para poder tabular
 Diabetes_B$vegdiet <- as.factor(Diabetes_B$vegdiet)
 # Creamos una tabla cruzada
