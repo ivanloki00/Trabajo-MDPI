@@ -1,8 +1,11 @@
 ---
 title: "TITULO"
-author: "Isabelle Archer, Lucía del Carmen Fito Fito, Iván Navarro Martínez, Ruben Saiz López (Grupo B1-08)"
+author: "Isabelle Archer, Lucía del Carmen Fito Fito, Iván Navarro Martínez, Ruben
+  Saiz López (Grupo B1-08)"
 date: "`r Sys.Date()`"
-output: pdf_document
+output:
+  html_document:
+    df_print: paged
 ---
 
 ```{r setup, include=FALSE}
@@ -18,6 +21,14 @@ library(tinytex)
 load("09B_Diabetes.RData")
 Diabetes_B
 ```
+
+```{r}
+numNA = apply(Diabetes_B, 2, function(x) sum(is.na(x)))
+percNA = round(100 * apply(Diabetes_B, 2, function(x) mean(is.na(x))))
+tablaNA = data.frame("tipo" = descDiabetes[,-1], numNA, percNA)
+tablaNA[tablaNA$numNA > 0,]
+```
+
 
 ```{r tabla descripcion, echo=TRUE}
 descDiabetes = data.frame("variable" = colnames(Diabetes_B),
