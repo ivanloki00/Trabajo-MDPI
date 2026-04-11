@@ -13,56 +13,62 @@ knitr::opts_chunk$set(echo = FALSE, cache = FALSE, include = TRUE, warning = FAL
 library(tinytex)
 ```
 
+
+
 # Exploración y preparación de la BBDD
+
 
 ## Descripción y naturaleza de las variables
 
-```{r carga datos, echo=FALSE}
+```{r carga datos, include=FALSE}
 load("09B_Diabetes.RData")
 Diabetes_B
 ```
 
-<<<<<<< HEAD
-```{r}
+Cargamos los datos. Se han registrado `r nrow(Diabetes_B)` observaciones iniciales.
+
+Creamos una tabla descriptiva de las variables presentes en la base de datos, indicando su tipo (numérica o categórica) y una breve descripción de cada una. 
+Esta tabla es fundamental para entender el contexto de cada variable y su posible relevancia y uso en el análisis posterior.
+
+```{r tabla descripcion}
+descDiabetes = data.frame("variable" = colnames(Diabetes_B),
+                      "tipo" = c(rep("numerical", 8), rep("categorical", 2), rep("numerical", 3)),
+                      "descripción" = c("Número de embarazos previos",
+                                        "Glucosa en plasma (mg/dL)",
+                                        "Presión arterial diastólica (mm Hg)",
+                                        "Grosor del pliegue cutáneo del tríceps (mm)",
+                                        "Insulina sérica a las 2 horas de la prueba (mug/ml)",
+                                        "Índice de Masa Corporal",
+                                        "Puntuación de la carga genética basada en la historia familiar",
+                                        "Edad de la paciente en años",
+                                        "Si tiene o no diabetes (neg=Sano, pos=Afectado)",
+                                        "Dieta vegana (Yes=Vegano, No=Dieta omnívora)",
+                                        "Niveles de colesterol total en sangre (mg/dL)",
+                                        "Niveles de leptina sérica (ng/mL), regula saciedad",
+                                        "Proteína C Reactiva en sangre (mg/L), mide inflamación"), stringsAsFactors = FALSE)
+rownames(descDiabetes) = descDiabetes$variable
+descDiabetes
+```
+
+Hay `r ncol(Diabetes_B)` variables en total, de las cuales `r sum(descDiabetes$tipo == "numerical")` son numéricas (biomarcadores y edad) y `r sum(descDiabetes$tipo == "categorical")` son categóricas binarias (diabetes y vegdiet).
+La variable objetivo es `diabetes`, que indica si el paciente tiene o no diabetes.
+
+## Análisis descriptivo
+
+```{r numNA, results = 'hide'}
 numNA = apply(Diabetes_B, 2, function(x) sum(is.na(x)))
 percNA = round(100 * apply(Diabetes_B, 2, function(x) mean(is.na(x))))
 tablaNA = data.frame("tipo" = descDiabetes[,-1], numNA, percNA)
 tablaNA[tablaNA$numNA > 0,]
 ```
 
+Hemos comprobado que no hay valores faltantes (NA) en ninguna de las variables, lo que facilita el análisis posterior sin necesidad de imputación o eliminación de casos.
 
-```{r tabla descripcion, echo=TRUE}
-=======
-```{r tabla descripcion, echo=FALSE}
->>>>>>> bc6459f029e2ebca85395aa819713b395b0c810b
-descDiabetes = data.frame("variable" = colnames(Diabetes_B),
-                      "tipo" = c(rep("numerical", 8), rep("categorical", 2), rep("numerical", 3)),
-                      "descripción" = c("Número de embarazos previos de la paciente",
-                                        "Concentración de glucosa en plasma (mg/dL) tras una prueba de tolerancia oral",
-                                        "Presión arterial diastólica (mm Hg)",
-                                        "Grosor del pliegue cutáneo del tríceps (mm), utilizado para estimar la grasa corporal total",
-                                        "Niveles de insulina sérica a las 2 horas de la prueba (𝜇g/ml)",
-                                        "Índice de Masa Corporal",
-                                        "Puntuación que sintetiza la carga genética basada en la historia familiar",
-                                        "Edad de la paciente en años",
-                                        "Estado del paciente con respecto a la diabetes (neg=Sano, pos=Afectado)",
-                                        "Alimentación del paciente en base a una dieta vegana (Yes=Vegano, No=Dieta omnívora)",
-                                        "Niveles de colesterol total en sangre (mg/dL)",
-                                        "Niveles de leptina sérica (ng/mL). Hormona que regula la saciedad y el gasto energético",
-                                        "Proteína C Reactiva en sangre (mg/L). Marcador de inflamación"), stringsAsFactors = FALSE)
-rownames(descDiabetes) = descDiabetes$variable
-descDiabetes
-```
-
-La base de datos tiene 371 observaciones iniciales.
-
-## Análisis descriptivo
-
-```{r resumen numericas, echo=FALSE}
+```{r resumen numericas, results = 'hide'}
 summary(Diabetes_B[,descDiabetes$variable[descDiabetes$tipo == "numerical"]])
 ```
 
-```{r variabilidad, echo=FALSE}
+```{r variabilidad, results = 'hide'}
 # Variabilidad de las variables numéricas (desviación típica)
 mySD = apply(Diabetes_B[,descDiabetes$variable[descDiabetes$tipo == "numerical"]], 2, sd)
 # Mejor calcular el coeficiente de variación porque no depende de las unidades o magnitud de las variables
@@ -71,78 +77,49 @@ myCV = mySD/myMU
 sort(myCV)
 ```
 
-```{r binarias, echo=FALSE}
+Primero, realizamos un análisis descriptivo de las variables numéricas. Esto nos permite entender la distribución de cada variable y detectar posibles valores atípicos o rangos inconsistentes.
+En la variable `pregnant`, se observa que el máximo número de embarazos es `r max(Diabetes_B$pregnant)`, lo que podría indicar la presencia de casos extremos o un valor inconsistente en la base de datos. La variable `insulin` muestra una gran variabilidad, con un máximo de `r max(Diabetes_B$insulin)` mug/ml fuera del rango esperado, lo que podría afectar el análisis si no se maneja adecuadamente. El resto de las variables están dentro de rangos esperados, pero muestran una amplia dispersión.
+
+```{r binarias,  results = 'hide'}
 apply(Diabetes_B[,descDiabetes$variable[descDiabetes$tipo == "categorical"]], 2, table, useNA = "i")
 ```
 
-```{r categoricas, echo=FALSE}
+```{r categoricas,  results = 'hide'}
 apply(Diabetes_B[,descDiabetes$variable[descDiabetes$tipo == "categorical"]], 2,
       function (x) round(100*table(x)/sum(table(x)), 2))
 ```
 
-Como todas las variables varian suficientemente, se las deja todas.
+Como todas las variables categóricas varían suficientemente, lo que significa que son variables aleatorias y tiene sentido incluirlas en el análisis, se las deja todas.
 
-```{r boxplot, echo=FALSE}
+Ahora, analizamos si alguna variable tiene valores anómalos mediante un análisis univariante. Para esto, se han generado diagramas de caja (boxplots) para cada variable numérica, utilizando una escala logarítmica en el eje y para facilitar la visualización de los datos con rangos muy dispares. 
+
+```{r boxplot}
 #par(mar = c(9,4,2,2))
 boxplot(Diabetes_B[,descDiabetes$variable[descDiabetes$tipo == "numerical"]], log = "y", las = 2, ylim = c(1e-1, 1e3))
 ```
-%%%%%%%%%%%%%%% IVAN %%%%%%%%%%%%%%%%%%%%%%%% (por aqui empiezo, siguiendo un poco la info d antes)
 
-Una vez que hemos analizado las variables una por una (univariante) y hemos comprobado la ausencia de valores faltantes y constantes, el siguiente paso crítico en la preparación de una BBDD es entender **cómo se relacionan las variables entre sí**. Esto nos permite detectar dos cosas vitales:
+```{r discrepancias, include=FALSE}
+par(mfrow = c(1,2))   # mfcol
+hist(Diabetes_B$insulin, 50)
+boxplot(Diabetes_B$insulin, xlab = "insulin")
 
-1\. **Redundancia (Colinealidad):** Si dos variables numéricas están muy correlacionadas (proveen la misma información), podríamos eliminar una de ellas para simplificar el modelo predictivo.
+par(mfrow = c(1,2))   # mfcol
+hist(Diabetes_B$pedigree, 50)
+boxplot(Diabetes_B$pedigree, xlab = "pedigree")
 
-2.  **Asociación con el objetivo:** Observar si variables concretas discriminan bien nuestra variable objetivo (`diabetes`). 
-
-### Matriz de Correlación
-Las matrices de correlación nos calculan el coeficiente de Pearson entre un abanico continuo de -1 (relación inversa total) a 1 (relación directa total). Las correlaciones por encima de 0.7 nos advierten de redundancias importantes.
-
-```{r correlacion, echo=FALSE}
-# 1. Filtramos solo las variables que son numéricas
-nums <- sapply(Diabetes_B, is.numeric)
-data_num <- Diabetes_B[, nums]
-# 2. Calculamos la matriz de correlación
-cor_mat <- cor(data_num, use = "complete.obs")
-# 3. Vamos a filtrar la matriz e imprimir solo las parejas con Correlación Mayor a 0.5 (Alta correlación)
-cor_mat[lower.tri(cor_mat, diag=TRUE)] <- NA
-high_cor <- which(abs(cor_mat) > 0.5, arr.ind = TRUE)
-cat("Parejas de Variables Altamente Correlacionadas\n")
-for(i in 1:nrow(high_cor)){
-    cat(rownames(cor_mat)[high_cor[i,1]], "-", colnames(cor_mat)[high_cor[i,2]], 
-        ":", round(cor_mat[high_cor[i,1], high_cor[i,2]], 2), "\n")
-}
+par(mfrow = c(1,2))   # mfcol
+hist(Diabetes_B$leptin, 50)
+boxplot(Diabetes_B$leptin, xlab = "leptin")
 ```
 
--   `pregnant - age : 0.70` A mayor edad, es predecible una mayor cantidad de embarazos en el histórico
+Se observa que las variables `insulin`, `pedigree` y `leptin` tienen muchos valores anómalos. Después de investigar sus distribuciones, no se detectan inconsistencias y mantendremos las observaciones anómalas en la BBDD.
 
--   `triceps - mass : 0.66` El grosor del pliegue cutáneo del tríceps avanza predeciblemente con la masa corporal general
+# Análisis de Componentes Principales
 
--   `mass - CRP : 0.61` La proteína C Reactiva escala de la mano con el Índice de Masa Corporal
+## Tratamiento de los datos
+El siguiente paso crítico es entender **cómo se relacionan las variables entre sí**. Esto nos permite detectar dos cosas importantes: la redundancia/colinealidad y la asociación con la variable target. Si dos variables númericas están muy correlacionadas, podríamos eliminar una de ellas para simplificar el modelo predictivo o agruparlas en una variable latente que recoge la información de las dos, usando PCA. Para la asociación, podemos observar si variables concretas discriminan bien nuestra variable objetivo (`diabetes`).
 
--   `glucose - insulin : 0.59` Niveles altos de glucosa correlacionan con niveles de insulina
-
-La pareja **pregnant-age** se acerca al umbral crítico del 0.75-0.80, una de las dos variables podría llegar a eliminarse.
-
-###Análisis Bivariado 
-Ahora vamos a visualizar rápidamente el comportamiento que tienen las variables numéricas clave en función a nuestra clase de interés: si el sujeto padece diabetes (positiva o negativa).
-```{r bivariado, echo=FALSE}
-# Visualizamos la glucosa e insulina partidas por el diagnóstico de diabetes
-par(mfrow = c(1,2))
-boxplot(glucose ~ diabetes, data = Diabetes_B, 
-        main = "Glucosa vs Diabetes", 
-        col = c("lightblue", "salmon"), 
-        xlab = "Diágnóstico", ylab = "Glucosa")
-boxplot(age ~ diabetes, data = Diabetes_B, 
-        main = "Edad vs Diabetes", 
-        col = c("lightblue", "salmon"), 
-        xlab = "Diagnóstico", ylab = "Edad")
-# Comprobación de las medias exactas para Glucosa
-aggregate(glucose ~ diabetes, data = Diabetes_B, FUN = mean)
-```
-Al observar los diagramas que genera R y ver la tabla de medias de glucosa (neg: 110.5, pos: 145.3), comprobamos de manera super evidente que la **glucosa es un excelente predictor**. Los enfermos diagnosticados positivamente tienen la línea base de la caja notoriamente elevada y se superponen muy poco con el grueso de pacientes negativos. La edad, sin embargo, muestra cajas mucho más solapadas (impacta menos en el resultado global).
-
-###Análisis Bivariado (Categórica vs. Categórica)
-```{r bivariado categorico, echo=FALSE}
+```{r bivariado categorico, results='hide'}
 # Convertimos el texto a factor para poder tabular
 Diabetes_B$vegdiet <- as.factor(Diabetes_B$vegdiet)
 # Creamos una tabla cruzada
@@ -153,63 +130,46 @@ print(tabla_cruzada)
 cat("\n--- Proporciones por Fila (Sabiendo la Dieta, ¿qué % es Diabético?) ---\n")
 round(prop.table(tabla_cruzada, 1) * 100, 2)
 ``` 
-Se observa con este analisis que la variable `vegdiet` es totalmente **inútil** para predecir si alguien tendrá diabetes. Podría ser candidata a ser desechada sin afectar al aprendizaje general.
 
-# Análisis de Componentes Principales
+Después de un análisis bivariado de las dos variables categóricas, se observa que la variable `vegdiet` es totalmente inútil para predecir si alguien tendrá diabetes, debido a que los perfiles de filas son iguales independientemente de la dieta del paciente. Podría ser candidata a ser desechada sin afectar al aprendizaje general.
 
-## Tratamiento de los datos
-
-```{r}
+```{r seleccion variables pca, include=FALSE}
 library(PLSandO)
 
-# 1. Definimos las variables nutricionales/metabólicas (excluyendo 'diabetes' y 'vegdiet')
-# Según tu descDiabetes, seleccionamos las numéricas
+# Definimos las variables nutricionales/metabólicas (excluyendo 'diabetes' y 'vegdiet')
 vars_pca <- descDiabetes$variable[descDiabetes$tipo == "numerical"]
 ```
-Para la ejecución del modelo PCA, se han seleccionado exclusivamente las *variables de naturaleza numérica*, ya que este análisis se basa en el cálculo de varianzas y covarianzas que requieren datos continuos. Se han excluido las variables categóricas, como la dieta (vegdiet) y el diagnóstico final (diabetes), con el fin de que la estructura de las componentes principales se construya únicamente a partir de los biomarcadores metabólicos y antropométricos. Esto nos permitirá observar cómo la variabilidad biológica de las pacientes agrupa los datos de forma natural antes de contrastarlos con el diagnóstico real.
+Para la ejecución del modelo PCA, se han seleccionado exclusivamente las *variables de naturaleza numérica*, ya que este análisis se basa en el cálculo de varianzas y covarianzas que requieren datos continuos. Se han excluido las variables categóricas, como la dieta (vegdiet) por las razones mencionadas antes y el diagnóstico final (diabetes), con el fin de que la estructura de las componentes principales se construya únicamente a partir de los biomarcadores metabólicos y antropométricos. Esto nos permitirá observar cómo la variabilidad biológica de las pacientes agrupa los datos de forma natural antes de contrastarlos con el diagnóstico real.
 
+Como hemos visto antes, no hay valores faltantes ni variables que tienen baja variabilidad, y tampoco vamos a incluir las variables categóricas, entonces no hace falta aplicar la función **Preparing()** de la librería *PLSandO* para limpiar los datos.
 
-```{r}
-# Aplicamos Preparing() 
-# includeFactors = FALSE porque ya hemos visto que vegdiet no aporta valor
-# scale = TRUE es por defecto en el modelo, pero Preparing ayuda a limpiar
-diabetesPrep <- Preparing(Diabetes_B[, vars_pca], 
-                         includeFactors = FALSE, 
-                         CVfilter = 0.01, 
-                         excludeNA = 0.2)
-```
+Como se observa en el resumen estadístico de los datos, las variables presentan rangos muy dispares (p.ej., la `insulin` varía entre `r min(Diabetes_B$insulin)` y `r max(Diabetes_B$insulin)`, mientras que `pedigree` se mueve entre `r min(Diabetes_B$pedigree)` y `r max(Diabetes_B$pedigree)`). Por ello, aplicaremos un escalado unitario en el modelo para evitar que las variables con magnitudes mayores dominen artificialmente la varianza del modelo, permitiendo que cada biomarcador tenga el mismo peso específico.
 
-
-```{r}
-# Mostramos si se ha eliminado algo
-cat("Variables/Observaciones eliminadas:\n")
-print(diabetesPrep$removed)
-```
-
-Tras aplicar el filtrado, se confirma que la base de datos mantiene las 371 observaciones, lo que indica la ausencia de valores faltantes (NAs) críticos que impidieran el análisis.
-
-```{r}
-# Guardamos la matriz final para el PCA
-diabetesPCA <- diabetesPrep$x
-```
-
-
-```{r}
-# Verificamos el estado final de los datos
-summary(diabetesPCA)
-```
-
-Como se observa en el resumen estadístico de los datos preparados, las variables presentan rangos muy dispares (p.ej., la insulin varía entre 14 y 744, mientras que pedigree se mueve entre 0.08 y 2.42). Por ello, aplicaremos un escalado unitario en el modelo para evitar que las variables con magnitudes mayores dominen artificialmente la varianza del modelo, permitiendo que cada biomarcador tenga el mismo peso específico.
 ## Selección del número de componentes principales
 
-```{r}
+Aplicamos la función **pca()** sobre las variables númericas seleccionadas. La función las centra y las escala a varianza unitaria. También, se estimará el máximo número de PCs posible. 
+
+```{r pca inicial, include=FALSE}
 # Ejecutamos el modelo PCA inicial
 # Usamos scaling = "standard" para realizar el centrado y escalado unitario
+diabetesPCA = Diabetes_B[, vars_pca]
 mipca = pca(diabetesPCA, ncomp = NULL, algo = "nipals", scaling = "standard")
+```
 
-# Visualizamos el Scree Plot (Gráfico de sedimentación)
+Para decidir el número de PCs a retener, vamos a mirar el *scree plot* y también la tabla con la varianza explicada por cada PC y la acumulada.
+
+```{r scree plot}
+# Visualizamos el Scree Plot
 pcaPlot(mipca, type = 'scree')
 ```
+
+```{r tabla eig}
+library(knitr)
+K = 4
+kable(mipca$explVar[1:K,])
+```
+
+Vamos a retener aquellas PCs que expliquen más varianza que la media, representada por la línea roja en el gráfico, entonces elegiríamos 3 PCs, aunque la PC 4 está muy cerca también. Usando el criterio del codo nos quedamos con `r K` PCs que explican un `r round(mipca$explVar[K,"cumPercVar"],1)`% de la varianza total de los datos.
 
 ## Validación del modelo
 
