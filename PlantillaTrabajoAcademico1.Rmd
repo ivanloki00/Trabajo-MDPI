@@ -27,25 +27,24 @@ Diabetes_B
 
 Cargamos los datos. Se han registrado `r nrow(Diabetes_B)` observaciones iniciales.
 
-Creamos una tabla descriptiva de las variables presentes en la base de datos, indicando su tipo (numérica o categórica) y una breve descripción de cada una. 
-Esta tabla es fundamental para entender el contexto de cada variable y su posible relevancia y uso en el análisis posterior.
+Creamos una tabla descriptiva de las variables presentes en la base de datos, indicando su tipo (numérica o categórica) y una breve descripción de cada una. Esta tabla es fundamental para entender el contexto de cada variable y su posible relevancia y uso en el análisis posterior.
 
 ```{r tabla descripcion}
 descDiabetes = data.frame("variable" = colnames(Diabetes_B),
                       "tipo" = c(rep("numerical", 8), rep("categorical", 2), rep("numerical", 3)),
-                      "descripción" = c("Número de embarazos previos",
+                      "descripcion" = c("Numero de embarazos previos",
                                         "Glucosa en plasma (mg/dL)",
-                                        "Presión arterial diastólica (mm Hg)",
-                                        "Grosor del pliegue cutáneo del tríceps (mm)",
-                                        "Insulina sérica a las 2 horas de la prueba (mug/ml)",
-                                        "Índice de Masa Corporal",
-                                        "Puntuación de la carga genética basada en la historia familiar",
-                                        "Edad de la paciente en años",
+                                        "Presion arterial diastolica (mm Hg)",
+                                        "Grosor del pliegue cutaneo del triceps (mm)",
+                                        "Insulina serica a las 2 horas de la prueba (mug/ml)",
+                                        "Indice de Masa Corporal",
+                                        "Puntuacion de la carga genetica basada en la historia familiar",
+                                        "Edad de la paciente en anyos",
                                         "Si tiene o no diabetes (neg=Sano, pos=Afectado)",
-                                        "Dieta vegana (Yes=Vegano, No=Dieta omnívora)",
+                                        "Dieta vegana (Yes=Vegano, No=Dieta omnivora)",
                                         "Niveles de colesterol total en sangre (mg/dL)",
-                                        "Niveles de leptina sérica (ng/mL), regula saciedad",
-                                        "Proteína C Reactiva en sangre (mg/L), mide inflamación"), stringsAsFactors = FALSE)
+                                        "Niveles de leptina serica (ng/mL), regula saciedad",
+                                        "Proteina C Reactiva en sangre (mg/L), mide inflamacion"), stringsAsFactors = FALSE)
 rownames(descDiabetes) = descDiabetes$variable
 descDiabetes
 ```
@@ -92,13 +91,12 @@ apply(Diabetes_B[,descDiabetes$variable[descDiabetes$tipo == "categorical"]], 2,
 Como todas las variables categóricas varían suficientemente, lo que significa que son variables aleatorias y tiene sentido incluirlas en el análisis, se las deja todas.
 
 Ahora, analizamos si alguna variable tiene valores anómalos mediante un análisis univariante. Para esto, se han generado diagramas de caja (boxplots) para cada variable numérica, utilizando una escala logarítmica en el eje y para facilitar la visualización de los datos con rangos muy dispares. 
-
-```{r boxplot}
+```{r boxplot, fig.height=4.5, fig.width=6}
 #par(mar = c(9,4,2,2))
 boxplot(Diabetes_B[,descDiabetes$variable[descDiabetes$tipo == "numerical"]], log = "y", las = 2, ylim = c(1e-1, 1e3))
 ```
 
-```{r discrepancias, include=FALSE}
+```{r discrepancias, fig.show='hide'}
 par(mfrow = c(1,2))   # mfcol
 hist(Diabetes_B$insulin, 50)
 boxplot(Diabetes_B$insulin, xlab = "insulin")
@@ -121,9 +119,9 @@ El siguiente paso crítico es entender **cómo se relacionan las variables entre
 
 ```{r bivariado categorico, results='hide'}
 # Convertimos el texto a factor para poder tabular
-Diabetes_B$vegdiet <- as.factor(Diabetes_B$vegdiet)
+Diabetes_B$vegdiet = as.factor(Diabetes_B$vegdiet)
 # Creamos una tabla cruzada
-tabla_cruzada <- table(Diabetes_B$vegdiet, Diabetes_B$diabetes)
+tabla_cruzada = table(Diabetes_B$vegdiet, Diabetes_B$diabetes)
 # Le agregamos márgenes y mostramos proporciones
 cat("--- Frecuencias Absolutas ---\n")
 print(tabla_cruzada)
@@ -137,7 +135,7 @@ Después de un análisis bivariado de las dos variables categóricas, se observa
 library(PLSandO)
 
 # Definimos las variables nutricionales/metabólicas (excluyendo 'diabetes' y 'vegdiet')
-vars_pca <- descDiabetes$variable[descDiabetes$tipo == "numerical"]
+vars_pca = descDiabetes$variable[descDiabetes$tipo == "numerical"]
 ```
 Para la ejecución del modelo PCA, se han seleccionado exclusivamente las *variables de naturaleza numérica*, ya que este análisis se basa en el cálculo de varianzas y covarianzas que requieren datos continuos. Se han excluido las variables categóricas, como la dieta (vegdiet) por las razones mencionadas antes y el diagnóstico final (diabetes), con el fin de que la estructura de las componentes principales se construya únicamente a partir de los biomarcadores metabólicos y antropométricos. Esto nos permitirá observar cómo la variabilidad biológica de las pacientes agrupa los datos de forma natural antes de contrastarlos con el diagnóstico real.
 
@@ -158,7 +156,7 @@ mipca = pca(diabetesPCA, ncomp = NULL, algo = "nipals", scaling = "standard")
 
 Para decidir el número de PCs a retener, vamos a mirar el *scree plot* y también la tabla con la varianza explicada por cada PC y la acumulada.
 
-```{r scree plot}
+```{r scree plot, fig.height=4, fig.width=5}
 # Visualizamos el Scree Plot
 pcaPlot(mipca, type = 'scree')
 ```
@@ -171,9 +169,103 @@ kable(mipca$explVar[1:K,])
 
 Vamos a retener aquellas PCs que expliquen más varianza que la media, representada por la línea roja en el gráfico, entonces elegiríamos 3 PCs, aunque la PC 4 está muy cerca también. Usando el criterio del codo nos quedamos con `r K` PCs que explican un `r round(mipca$explVar[K,"cumPercVar"],1)`% de la varianza total de los datos.
 
+Ahora, vamos a visualizar las PCs seleccionadas para ver si hay una componente que no nos aporta información. Vamos a mirar el gráfico de scores para ver la dispersión de los pacientes en el espacio y el gráfico de correlación de las variables para ver cuáles influyen en las `r K` PCs.
+
+```{r scores y corr iniciales, fig.height=8, fig.width=9, fig.show='hide'}
+library(gridExtra)
+p1 = pcaPlot(mipca, type = 'scores', comp = 1:2, colBy = NULL, labels = TRUE,
+             labelTop = 0.1, repel = TRUE)
+p2 = pcaPlot(mipca, type = 'scores', comp = 3:4, colBy = NULL, labels = TRUE,
+             labelTop = 0.1, repel = TRUE)
+p3 = pcaPlot(mipca, type = 'corr', comp = 1:2, colBy = "contrib", 
+             labels = TRUE, repel = TRUE, col = "hot")
+p4 = pcaPlot(mipca, type = 'corr', comp = 3:4, colBy = "contrib", 
+             labels = TRUE, repel = TRUE, col = "hot")
+grid.arrange(p1,p2,p3,p4, nrow = 2)
+```
+En las 2 primeras PCs observamos algunos pacientes un poco más alejados que el resto, y uno en la componente 3, que puede ser las variables `insulin`, `pedigree` o `glucose`. Veremos más adelante si se pueden considerar anómalos y qué hacemos con ellos.
+
+La componente 4 es recogida totalmente por la variable `leptin`, la variable que mide la saciedad y el gasto energético. Como hemos visto antes, tiene algunas observaciones fuera del rango esperado, las cuales podrían influir en el modelo. Vamos a investigar si esas observaciones afectan al modelo o son valores anómalos. 
+
 ## Validación del modelo
 
-<!-- Detección de valores anómalos y decisiones tomadas a partir de los mismos. -->
+## Detección de anómalos moderados con la distancia al modelo (SCR)
+
+Para detectar las observaciones (pacientes) que no están bien explicadas por nuestro modelo PCA, estudiaremos sus distancias al modelo mediante la Suma de Cuadrados Residual (SCR)
+
+```{r scr, fig.width=8, fig.height=4}
+par(mfrow = c(1,2))
+anomSCR95 = pcaOutliers(mipca, method = "RSS", conf = 95)
+anomSCR99 = pcaOutliers(mipca, method = "RSS", conf = 99)
+```
+```{r moderados, results='hide'}
+moderados = sort(anomSCR95$RSS[anomSCR95$ModerateOutliers], decreasing = TRUE)
+moderados
+```
+Hay `r length(anomSCR95$ModerateOutliers)` pacientes que se salen fuera del límite del 95%, y `r length(anomSCR99$ModerateOutliers)` fuera del límite del 99%. Veamos qué variables contribuyen más a las anomalías de los pacientes con mayor SCR: `r names(moderados[1:3])`. 
+
+```{r contrib scr modelo, fig.width=9, fig.height=4, results='hide', fig.show='hide'}
+par(mfrow = c(1,3))
+outlierContrib(mipca, outliers = anomSCR95, specificObs = names(moderados[1:3]))
+```
+```{r boxplot scr, fig.height=4, fig.width=4, results='hide', fig.show='hide'}
+boxplot(mipca$X, las = 2, main = "Datos escalados")
+kable(round(mipca$X[names(moderados[1:3]),],2))
+```
+```{r scores scr, fig.show='hide'}
+scores_df = as.data.frame(mipca$scores)
+scores_df$Estado = "Normal"
+scores_df$Estado[rownames(scores_df) %in% anomSCR95$ModerateOutliers] = "Moderate"
+
+p1 = pcaPlot(mipca, type = 'scores', comp = 1:2, colBy = scores_df$Estado, 
+             labels = TRUE, labelTop = 0.1, repel = TRUE, ellipses = FALSE)
+p2 = pcaPlot(mipca, type = 'scores', comp = 3:4, colBy = scores_df$Estado, 
+             labels = TRUE, labelTop = 0.1, repel = TRUE, ellipses = FALSE)
+grid.arrange(p1, p2, nrow = 1)
+```
+Después de investigar dónde situan las observaciones, no representan valores anómalos debido a que representan variabilidad biológica real. Las observaciones `r54` y `r764` presentan mayor edad, pero no es un error en los datos. No excluiremos estos anómalos moderados de momento.
+
+## Detección de anómalos severos con T2-Hotelling
+
+Para identificar los valores anómalos severos (los que sesgan la creación de las PCs), usamos el estadístico $T^2$ de Hotelling. Si una observación salen fuera de los límites y además tienen baja SCR, se considera un anómalo severo.
+
+```{r T2, fig.width=8, fig.height=4}
+par(mfrow = c(1,2))
+anomSev95 = pcaOutliers(mipca, method = "T2", conf = 95)
+anomSev99 = pcaOutliers(mipca, method = "T2", conf = 99)
+```
+```{r t2 severos, results='hide'}
+anomSev95$T2[anomSev95$SevereOutliers]
+outlierContrib(mipca, outliers = anomSev99)
+```
+```{r scores t2, fig.show='hide'}
+scores_df = as.data.frame(mipca$scores)
+scores_df$Estado = "Normal"
+scores_df$Estado[rownames(scores_df) %in% anomSev95$SevereOutliers] = "Anomalo"
+
+p1 = pcaPlot(mipca, type = 'scores', comp = 1:2, colBy = scores_df$Estado, 
+             labels = FALSE, labelTop = 0.1, repel = TRUE, ellipses = FALSE)
+p2 = pcaPlot(mipca, type = 'scores', comp = 3:4, colBy = scores_df$Estado, 
+             labels = FALSE, labelTop = 0.1, repel = TRUE, ellipses = FALSE)
+grid.arrange(p1, p2, nrow = 1)
+```
+
+```{r pca sin severos, fig.height=8, fig.width=9, fig.show='hide', results='hide'}
+Diabetes_Limpia = Diabetes_B[!rownames(Diabetes_B) %in% anomSev95$SevereOutliers, ]
+mipca_clean = pca(Diabetes_Limpia[, vars_pca], ncomp = NULL, scaling = "standard")
+p1 = pcaPlot(mipca_clean, type = 'scores', comp = 1:2, colBy = NULL, labels = TRUE,
+             labelTop = 0.1, repel = TRUE)
+p2 = pcaPlot(mipca_clean, type = 'scores', comp = 3:4, colBy = NULL, labels = TRUE,
+             labelTop = 0.1, repel = TRUE)
+p3 = pcaPlot(mipca_clean, type = 'corr', comp = 1:2, colBy = "contrib", 
+             labels = TRUE, repel = TRUE, col = "hot")
+p4 = pcaPlot(mipca_clean, type = 'corr', comp = 3:4, colBy = "contrib", 
+             labels = TRUE, repel = TRUE, col = "hot")
+grid.arrange(p1,p2,p3,p4, nrow = 2)
+```
+Se detectaron `r length(anomSev99$SevereOutliers)` anómalos severos mediante el estadístico $T^2$ de Hotelling al 99% de confianza. Se procedió a eliminar esas observaciones de la base de datos y creó un nuevo modelo PCA sin ellas. Al comparar los resultados, se observaçó que la varianza explicada y la orientación de las cargas permanecen invariantes. Esto demuestra que el modelo es robusto y que la estructura biológica detectada no depende de casos aislados, sino que representa la tendencia general de la muestra.
+
+Dado que el modelo PCA muestra robustez frente a la presencia de valores extremos y asimetría en variables como la `insulina` y `leptina`, no hace falta aplicar transformaciones para suavizar los anómalos, garantizando que la interpretación de los resultados del modelo sea directa.
 
 ## Interpretación del modelo
 
