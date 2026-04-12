@@ -14,9 +14,9 @@ knitr::opts_chunk$set(echo = FALSE, cache = FALSE, include = TRUE, warning = FAL
 library(tinytex)
 ```
 
-# 1. Exploración y preparación de la BBDD
+# Exploración y preparación de la BBDD
 
-## 1.1 Descripción y naturaleza de las variables
+## Descripción y naturaleza de las variables
 
 ```{r carga datos, include=FALSE}
 load("09B_Diabetes.RData")
@@ -53,7 +53,7 @@ descDiabetes
 
 Hay `r ncol(Diabetes_B)` variables en total, de las cuales `r sum(descDiabetes$tipo == "numerical")` son numéricas (biomarcadores y edad) y `r sum(descDiabetes$tipo == "categorical")` son categóricas binarias (diabetes y vegdiet). La variable objetivo es `diabetes`, que indica si el paciente tiene o no diabetes.
 
-## 1.2Análisis descriptivo
+## Análisis descriptivo
 
 ```{r numNA, results = 'hide'}
 numNA <- apply(Diabetes_B, 2, function(x) sum(is.na(x)))
@@ -114,9 +114,9 @@ boxplot(Diabetes_B$leptin, xlab = "leptin")
 
 Se observa que las variables `insulin`, `pedigree` y `leptin` tienen muchos valores anómalos. Después de investigar sus distribuciones, no se detectan inconsistencias y mantendremos las observaciones anómalas en la BBDD.
 
-# 2. Análisis de Componentes Principales
+# Análisis de Componentes Principales
 
-## 2.1 Tratamiento de los datos
+## Tratamiento de los datos
 
 El siguiente paso crítico es entender **cómo se relacionan las variables entre sí**. Esto nos permite detectar dos cosas importantes: la redundancia/colinealidad y la asociación con la variable target. Si dos variables númericas están muy correlacionadas, podríamos eliminar una de ellas para simplificar el modelo predictivo o agruparlas en una variable latente que recoge la información de las dos, usando PCA. Para la asociación, podemos observar si variables concretas discriminan bien nuestra variable objetivo (`diabetes`).
 
@@ -147,7 +147,7 @@ Como hemos visto antes, no hay valores faltantes ni variables que tienen baja va
 
 Como se observa en el resumen estadístico de los datos, las variables presentan rangos muy dispares (p.ej., la `insulin` varía entre `r min(Diabetes_B$insulin)` y `r max(Diabetes_B$insulin)`, mientras que `pedigree` se mueve entre `r min(Diabetes_B$pedigree)` y `r max(Diabetes_B$pedigree)`). Por ello, aplicaremos un escalado unitario en el modelo para evitar que las variables con magnitudes mayores dominen artificialmente la varianza del modelo, permitiendo que cada biomarcador tenga el mismo peso específico.
 
-## 2.2 Selección del número de componentes principales
+## Selección del número de componentes principales
 
 Aplicamos la función **pca()** sobre las variables númericas seleccionadas. La función las centra y las escala a varianza unitaria. También, se estimará el máximo número de PCs posible.
 
@@ -200,9 +200,9 @@ En las 2 primeras PCs observamos algunos pacientes un poco más alejados que el 
 
 La componente 4 es recogida totalmente por la variable `leptin`, la variable que mide la saciedad y el gasto energético. Como hemos visto antes, tiene algunas observaciones fuera del rango esperado, las cuales podrían influir en el modelo. Vamos a investigar si esas observaciones afectan al modelo o son valores anómalos.
 
-## 2.3 Validación del modelo
+## Validación del modelo
 
-### 2.3.1 Detección de anómalos moderados con la distancia al modelo (SCR)
+### Detección de anómalos moderados con la distancia al modelo (SCR)
 
 Para detectar las observaciones (pacientes) que no están bien explicadas por nuestro modelo PCA, estudiaremos sus distancias al modelo mediante la Suma de Cuadrados Residual (SCR)
 
@@ -247,7 +247,7 @@ grid.arrange(p1, p2, nrow = 1)
 
 Después de investigar dónde situan las observaciones, no representan valores anómalos debido a que representan variabilidad biológica real. Las observaciones `r54` y `r764` presentan mayor edad, pero no es un error en los datos. No excluiremos estos anómalos moderados de momento.
 
-### 2.3.2 Detección de anómalos severos con T2-Hotelling
+### Detección de anómalos severos con T2-Hotelling
 
 Para identificar los valores anómalos severos (los que sesgan la creación de las PCs), usamos el estadístico $T^2$ de Hotelling. Si una observación salen fuera de los límites y además tienen baja SCR, se considera un anómalo severo.
 
@@ -312,12 +312,12 @@ mipca <- pca(diabetesPCA,
 )
 ```
 
-## 2.4 Interpretación del modelo
+## Interpretación del modelo
 
-Para analizar de manera visual cómo contribuye cada variable a las componentes, a continuación representamos los pesos de las características en cada dimensión retenida:
+Para analizar la relación de cada variable en las componentes, hemos representado los pesos de las características en cada dimensión retenida.
 
-```{r graficas loadings, fig.height=6, fig.width=9}
-loadings_matrix <- mipca$loadings
+```{r graficas loadings, fig.height=6, fig.width=9, results='hide'}
+loadings_matrix = mipca$loadings
 par(mfrow = c(2, 2), mar = c(6, 4, 3, 1))
 for (i in 1:4) {
   cargas <- loadings_matrix[, i]
@@ -332,28 +332,124 @@ for (i in 1:4) {
   )
 }
 ```
+En la primera componente, `leptin` está relacionada negativamente con el resto de las variables. En la segunda componente, `mass`, `CRP`, `triceps`, `pedigree`, y `leptin` están relacionadas positivamente entre sí, mientras que están relacionada negativamente con las variables `pregnant`, `age`, `cholesterol`, `pressure`, y `glucose`. La variable `insulin` no tiene influencia en esa componente. La tercera componente recoge las variables `insulin`, `glucose`, y `pedigree` contra el resto de las variables, menos `leptin` que no influye. La cuarta componente tiene como líder `leptin`, junto con `pregnant`, `pressure`, `edad` y `triceps`. `Cholesterol` y `glucose` están relacionados negativamente con las demás, menos `CRP`, `insulin`, `mass` y `pedigree` casi no influyen.
 
-**Gráfico** $R^2$
+Para ver el porcentaje de variabilidad de cada variable que queda explicado por el modelo PCA (`r round(mipca$explVar[K,"cumPercVar"],1)`), vamos a mirar el gráfico $R^2$.
 
-El siguiente gráfico muestra el porcentaje de variabilidad de cada variable (k) que queda explicado por el modelo PCA.
-
-```{r}
+```{r, fig.height=3, fig.width=4}
 pcaPlot(mipca, type = "R2")
 ```
 
-Al analizar estos gráficos de *loadings* de las 4 componentes principales retenidas, podemos dar una interpretación clínica a cada una de ellas:
+Es claro que la mayoría de la componente 4 está explicado por `leptin`, pero `cholesterol` y `pregnant` también son importantes. `Insulin` y `glucose` son quienes más contribuyen en la tercera componente, mientras que en la segunda son `pregnant` y `edad`. Finalmente, la primera componente está bien explicada por muchas variables, lo que tiene sentido porque explica el mayor porcentaje de variabilidad.
 
--   **Componente 1 (PC1 - 27.0% varianza)**: Todos sus *loadings* principales son positivos. Está dominada por el Índice de Masa Corporal (`mass`), adiposidad (`triceps`), marcadores de inflamación (`CRP`), `glucose` y `age`. Esta componente captura un factor general de **"Síndrome Metabólico y Obesidad"**. Valores altos en la PC1 corresponden a pacientes con un peor estado metabólico general, con mayor peso, inflamación y niveles de glucosa, que son claros factores de riesgo para la diabetes.
--   **Componente 2 (PC2 - 15.7% varianza)**: Contrasta fuertemente la edad y el número de embarazos (pesos negativos: `pregnant` -0.55 y `age` -0.50) frente a marcadores de obesidad y grasa (pesos positivos: `mass` 0.39, `CRP` 0.30 y `triceps` 0.28). Esta componente diferencia un perfil de **"Pacientes mayores multíparas"** (puntuación negativa en PC2) frente a un perfil de **"Pacientes más jóvenes con mayor grado de obesidad/inflamación"** (puntuación positiva).
--   **Componente 3 (PC3 - 11.4% varianza)**: Actúa como una balanza que separa la resistencia insulínica/genética del riesgo cardiovascular tradicional. En el espectro negativo agrupa `insulin`, `glucose` y `pedigree` (carga genética), y en el espectro positivo agrupa `cholesterol` y `pressure` (presión arterial). Esto indica la existencia de dos perfiles clínicos algo distintos entre las pacientes con riesgo biológico.
--   **Componente 4 (PC4 - 9.0% varianza)**: Está dominada casi enteramente por la `leptin` (peso de 0.88), con muy poca contribución del resto de variables. Esto sugiere que la variabilidad de la hormona que regula la saciedad tiene una evolución bastante independiente al resto de marcadores de sobrepeso analizados.
+Al analizar estos gráficos de las 4 componentes principales retenidas, podemos dar una interpretación clínica a cada una de ellas. 
+La componente 1 explica 27.03% de la variabilidad de los datos, y todos sus loadings menos uno son positivos. Sus variables más contribuyentes captura un factor de obesidad y distribución de grasa en el cuerpo. Valores altos en la PC1 corresponden a pacientes con un peor estado metabólico general, con mayor peso, inflamación, y niveles de glucosa, que son factores importantes de riesgo para la diabetes. Explica 15.71% de la variabilidad total de los datos.
+Las variables de edad y número de embarazos contrastan fuertemente frente a marcadores de obesidad y grasa en la segunda componente. Esta diferencia los pacientes jóvenes sin hijos pero con mayor grado de obesidad y/o inflamación con los pacientes mayores con hijos pero con menor grasa.
+La componente 3 recoge 11.4% de la variabilidad y enfoque en la separación entre los niveles de insulina y glucosa con la historia familial con el riesgo cardiovascular tradicional. Indica la existencia de dos perfiles clínicos distintos entre los pacientes con riesgo biológico.
+Finalmente, la PC4 explica 9.0% de la variabilidad y está dominada casi enteramente por la `leptin`, con una poca contribución de `cholesterol` en la dirección opuesta. Esto sugiere que la variabilidad de la hormona que regula la saciedad tiene una evolución bastante independiente al resto de marcadores de sobrepeso.
 
-## 2.5 Conclusiones
+## Conclusiones
 
-El Análisis de Componentes Principales ha permitido sintetizar con éxito la alta dimensionalidad de los 11 biomarcadores y características demográficas en tan solo **4 nuevas variables latentes (PCs)**, reteniendo aproximadamente el **63%** de la variabilidad original.
+El Análisis de Componentes Principales ha permitido sintetizar la alta dimensionalidad de los 11 biomarcadores y características demográficas en tan solo **4 nuevas variables latentes (PCs)**, reteniendo aproximadamente el **63%** de la variabilidad original.
 
 Hemos demostrado que las diferentes medidas clínicas están correlacionadas y se agrupan en perfiles clínicos bien diferenciados: un estado metabólico adverso/obesidad general (PC1), un eje de edad y factores vinculados al embarazo frente a fenotipos con alta adiposidad independiente de la edad (PC2), la diferenciación entre vías ligadas a resistencia a la insulina cardiometabólico y vías ligadas a factores genéticos/glucémicos (PC3) y una vía independiente liderada por la leptina (PC4).
 
 Esta reducción no solo simplifica la complejidad del conjunto de datos, sino que elimina el ruido introducido por variables fuertemente ligadas entre sí (colinealidad). Además proporciona características ortogonales e interpretables, ideales para entrenar modelos predictivos (por ejemplo, para clasificar si una paciente padece diabetes o no), disminuyendo el riesgo de sobreajuste.
 
-# Reglas de asociación [OPCIONAL. 2 páginas máximo]
+# Reglas de asociación
+
+Para complementar el análisis, sería muy bien aplicar reglas de asociación para encontrar patrones y entender el comportamiento de los pacientes, especialmente con respecto a nuestro objetivo de entender por qúe un paciente tiene diabetes o no. Para hacer eso, requiere discretizar las variables númericas para tratarlas como categóricas ordinales. Con esto, podemos trabajar con los distintos niveles y descubrir las reglas de asociación. 
+
+Para discretizar las variables, se ha basado los niveles en umbrales médicos ya establecidos. Esas variables son: `glucose`, `mass`, `age`, y `pressure`. El resto de variables no tienen umbrales establecidos, por lo tanto usamos la función **discretizeDF()** de la librería *arules*. Se dividó esas variables en tres niveles ("Bajo", "Medio", "Alto") por frequencia para tenerlos equilibrados. Como hemos visto antes, la variable `vegdiet` es independiente de si los pacientes tienen diabetes o no, entonces la excluimos también.
+
+```{r prep reglas, message=FALSE, warning=FALSE, results='hide'}
+library(arules)
+
+datos_reglas = Diabetes_B
+
+# Aplicamos umbrales medicos
+datos_reglas$glucose = cut(Diabetes_B$glucose, 
+                             breaks = c(-Inf, 100, 125, Inf), 
+                             labels = c("Glu_Normal [56-100]", "Glu_Predia (100-125]", "Glu_Alta (>125)"))
+
+datos_reglas$mass = cut(Diabetes_B$mass, 
+                          breaks = c(-Inf, 25, 30, Inf), 
+                          labels = c("IMC_Normal [18-25]", "IMC_Sobrepeso (25-30]", "IMC_Obeso (>30)"))
+
+datos_reglas$age = cut(Diabetes_B$age, 
+                         breaks = c(-Inf, 35, 45, Inf), 
+                         labels = c("Edad_Joven [21-35]", "Edad_Adulto", "Edad_Senior"))
+
+datos_reglas$pressure = cut(Diabetes_B$pressure, 
+                              breaks = c(-Inf, 80, 89, Inf), 
+                              labels = c("Pres_Normal [24-80]", "Pres_Elevada", "Pres_Hiper"))
+
+# Discretizamos el resto de las variables
+vars_restantes = setdiff(names(datos_reglas), c("glucose", "mass", "age", "pressure", "diabetes", "vegdiet"))
+for (v in vars_restantes) {
+  cortes = discretize(Diabetes_B[[v]], method = "frequency", breaks = 3, onlycuts = TRUE)
+  cortes = round(cortes, 2)
+
+  labels_con_intervalo = c(
+    paste0("Bajo [", cortes[1], "-", cortes[2], "]"),
+    paste0("Medio (", cortes[2], "-", cortes[3], "]"),
+    paste0("Alto (", cortes[3], "-", cortes[4], "]")
+  )
+  
+  datos_reglas[[v]] <- discretize(Diabetes_B[[v]], 
+                                  method = "frequency", 
+                                  breaks = 3, 
+                                  labels = labels_con_intervalo)
+}
+
+# Aseguramos que diabetes sea factor
+datos_reglas$diabetes <- as.factor(datos_reglas$diabetes)
+
+# Seleccionamos todas las variables excepto 'vegdiet'
+datos_finales <- datos_reglas[, !(names(datos_reglas) %in% "vegdiet")]
+```
+
+A continuación aplicamos el algoritmo a priori, con un soporte mínimo de 0.001 y una confianza mínima de 0.8. Además, como nos interesa ver el comportamiento de diabetes, miramos solo las reglas que contiene diabetes en el consecuente.
+Primero, analizamos los factores de riesgo para desarrollar diabetes, incluyendo que el paciente sí tiene diabetes como el consecuente.
+
+```{r diabetes pos, results='hide'}
+reglasPos <- apriori(datos_finales, 
+                  parameter = list(supp = 0.001, conf = 0.8),
+                  appearance = list(rhs=c("diabetes=pos")))
+
+# Eliminamos reglas redundantes
+NoRedundantesPos = reglasPos[!is.redundant(x = reglasPos, measure = "confidence")]
+```
+Despúes de eliminar las reglas redundantes, hemos obtenido un total de `r length(NoRedundantesPos)` reglas.
+Ordenamos las reglas por su **lift** y miramos las 5 reglas con más lift.
+
+```{r diabetes pos lift}
+reglas_finalesPos <- sort(NoRedundantesPos, by = "lift")
+
+# Mostramos las 10 mejores
+inspect(head(reglas_finalesPos, 5))
+```
+Las reglas tienen el mismo lift: 3.01626. Esto significa que todos los antecedentes y tener diabetes son dependientes y son reglas útiles. Su interpretación es que teniendo las características del antecedente, es 3 veces más probable tener diabetes que tener diabetes en general. Por ejemplo, en la primera regla dice "si un paciente tiene hipertensión y es adulto (entre 35 y 45 años), es 3 veces más probable tener diabetes que un paciente en general". 
+
+Si el paciente es mayor de 35 años, es probable que tiene diabetes. Como vimos en el PCA, la edad influye mucho. Las otras variables importantes aquí son: `triceps`, `leptin`, `pedigree`, y `insulin`. Estas reglas respaldan el análisis del modelo PCA.  
+
+Ahora, para investigar los niveles ideales para no tener diabetes, poniendo el consecuente como no tener diabetes.
+
+```{r diabetes neg, results='hide'}
+reglasNeg <- apriori(datos_finales, 
+                  parameter = list(supp = 0.001, conf = 0.8),
+                  appearance = list(rhs=c("diabetes=neg")))
+
+# Eliminamos reglas redundantes y ordenamos por Lift
+NoRedundantesNeg = reglasNeg[!is.redundant(x = reglasNeg, measure = "confidence")]
+```
+
+```{r diabetes neg lift}
+reglas_finalesNeg <- sort(NoRedundantesNeg, by = "lift")
+
+# Mostramos las 10 mejores
+inspect(head(reglas_finalesNeg, 5))
+```
+Podemos ver que hipertensión aparece en esas reglas también, indicando que el hecho de tener hipertensión no significa que el paciente tiene diabetes o no, sino que el médico tiene que mirar las otras características del paciente. Lo mismo con la edad. El resto de las variables están dentro del rango normal, incluso en el nivel bajo, indicando que un médico debe estar alerta si los niveles empiezan a subir para prevenir diabetes antes.
+
+Usando las reglas de asociación, podemos ver las relaciones entre diabetes y marcadores biológicos para crear planes de prevención para pacientes basándose en sus características individuales.
