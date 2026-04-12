@@ -1,5 +1,5 @@
 ---
-title: "TITULO"
+title: "Investigación de la Influencia de Biomarcadores y Factores Demográficos en Diabetes"
 author: "Isabelle Archer, Lucía del Carmen Fito Fito, Iván Navarro Martínez, Ruben
   Saiz López (Grupo B1-08)"
 date: "`r Sys.Date()`"
