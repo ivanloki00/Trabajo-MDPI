@@ -4,6 +4,7 @@ author: "Isabelle Archer, Lucía del Carmen Fito Fito, Iván Navarro Martínez, 
   Saiz López (Grupo B1-08)"
 date: "`r Sys.Date()`"
 output:
+  pdf_document: default
   html_document:
     df_print: paged
 ---
@@ -13,12 +14,9 @@ knitr::opts_chunk$set(echo = FALSE, cache = FALSE, include = TRUE, warning = FAL
 library(tinytex)
 ```
 
+# 1. Exploración y preparación de la BBDD
 
-
-# Exploración y preparación de la BBDD
-
-
-## Descripción y naturaleza de las variables
+## 1.1 Descripción y naturaleza de las variables
 
 ```{r carga datos, include=FALSE}
 load("09B_Diabetes.RData")
@@ -30,104 +28,109 @@ Cargamos los datos. Se han registrado `r nrow(Diabetes_B)` observaciones inicial
 Creamos una tabla descriptiva de las variables presentes en la base de datos, indicando su tipo (numérica o categórica) y una breve descripción de cada una. Esta tabla es fundamental para entender el contexto de cada variable y su posible relevancia y uso en el análisis posterior.
 
 ```{r tabla descripcion}
-descDiabetes = data.frame("variable" = colnames(Diabetes_B),
-                      "tipo" = c(rep("numerical", 8), rep("categorical", 2), rep("numerical", 3)),
-                      "descripcion" = c("Numero de embarazos previos",
-                                        "Glucosa en plasma (mg/dL)",
-                                        "Presion arterial diastolica (mm Hg)",
-                                        "Grosor del pliegue cutaneo del triceps (mm)",
-                                        "Insulina serica a las 2 horas de la prueba (mug/ml)",
-                                        "Indice de Masa Corporal",
-                                        "Puntuacion de la carga genetica basada en la historia familiar",
-                                        "Edad de la paciente en anyos",
-                                        "Si tiene o no diabetes (neg=Sano, pos=Afectado)",
-                                        "Dieta vegana (Yes=Vegano, No=Dieta omnivora)",
-                                        "Niveles de colesterol total en sangre (mg/dL)",
-                                        "Niveles de leptina serica (ng/mL), regula saciedad",
-                                        "Proteina C Reactiva en sangre (mg/L), mide inflamacion"), stringsAsFactors = FALSE)
-rownames(descDiabetes) = descDiabetes$variable
+descDiabetes <- data.frame(
+  "variable" = colnames(Diabetes_B),
+  "tipo" = c(rep("numerical", 8), rep("categorical", 2), rep("numerical", 3)),
+  "descripcion" = c(
+    "Numero de embarazos previos",
+    "Glucosa en plasma (mg/dL)",
+    "Presion arterial diastolica (mm Hg)",
+    "Grosor del pliegue cutaneo del triceps (mm)",
+    "Insulina serica a las 2 horas de la prueba (mug/ml)",
+    "Indice de Masa Corporal",
+    "Puntuacion de la carga genetica basada en la historia familiar",
+    "Edad de la paciente en anyos",
+    "Si tiene o no diabetes (neg=Sano, pos=Afectado)",
+    "Dieta vegana (Yes=Vegano, No=Dieta omnivora)",
+    "Niveles de colesterol total en sangre (mg/dL)",
+    "Niveles de leptina serica (ng/mL), regula saciedad",
+    "Proteina C Reactiva en sangre (mg/L), mide inflamacion"
+  ), stringsAsFactors = FALSE
+)
+rownames(descDiabetes) <- descDiabetes$variable
 descDiabetes
 ```
 
-Hay `r ncol(Diabetes_B)` variables en total, de las cuales `r sum(descDiabetes$tipo == "numerical")` son numéricas (biomarcadores y edad) y `r sum(descDiabetes$tipo == "categorical")` son categóricas binarias (diabetes y vegdiet).
-La variable objetivo es `diabetes`, que indica si el paciente tiene o no diabetes.
+Hay `r ncol(Diabetes_B)` variables en total, de las cuales `r sum(descDiabetes$tipo == "numerical")` son numéricas (biomarcadores y edad) y `r sum(descDiabetes$tipo == "categorical")` son categóricas binarias (diabetes y vegdiet). La variable objetivo es `diabetes`, que indica si el paciente tiene o no diabetes.
 
-## Análisis descriptivo
+## 1.2Análisis descriptivo
 
 ```{r numNA, results = 'hide'}
-numNA = apply(Diabetes_B, 2, function(x) sum(is.na(x)))
-percNA = round(100 * apply(Diabetes_B, 2, function(x) mean(is.na(x))))
-tablaNA = data.frame("tipo" = descDiabetes[,-1], numNA, percNA)
-tablaNA[tablaNA$numNA > 0,]
+numNA <- apply(Diabetes_B, 2, function(x) sum(is.na(x)))
+percNA <- round(100 * apply(Diabetes_B, 2, function(x) mean(is.na(x))))
+tablaNA <- data.frame("tipo" = descDiabetes[, -1], numNA, percNA)
+tablaNA[tablaNA$numNA > 0, ]
 ```
 
 Hemos comprobado que no hay valores faltantes (NA) en ninguna de las variables, lo que facilita el análisis posterior sin necesidad de imputación o eliminación de casos.
 
 ```{r resumen numericas, results = 'hide'}
-summary(Diabetes_B[,descDiabetes$variable[descDiabetes$tipo == "numerical"]])
+summary(Diabetes_B[, descDiabetes$variable[descDiabetes$tipo == "numerical"]])
 ```
 
 ```{r variabilidad, results = 'hide'}
 # Variabilidad de las variables numéricas (desviación típica)
-mySD = apply(Diabetes_B[,descDiabetes$variable[descDiabetes$tipo == "numerical"]], 2, sd)
-# Mejor calcular el coeficiente de variación porque no depende de las unidades o magnitud de las variables
-myMU = colMeans(Diabetes_B[,descDiabetes$variable[descDiabetes$tipo == "numerical"]])
-myCV = mySD/myMU
+mySD <- apply(Diabetes_B[, descDiabetes$variable[descDiabetes$tipo == "numerical"]], 2, sd)
+myMU <- colMeans(Diabetes_B[, descDiabetes$variable[descDiabetes$tipo == "numerical"]])
+myCV <- mySD / myMU
 sort(myCV)
 ```
 
-Primero, realizamos un análisis descriptivo de las variables numéricas. Esto nos permite entender la distribución de cada variable y detectar posibles valores atípicos o rangos inconsistentes.
-En la variable `pregnant`, se observa que el máximo número de embarazos es `r max(Diabetes_B$pregnant)`, lo que podría indicar la presencia de casos extremos o un valor inconsistente en la base de datos. La variable `insulin` muestra una gran variabilidad, con un máximo de `r max(Diabetes_B$insulin)` mug/ml fuera del rango esperado, lo que podría afectar el análisis si no se maneja adecuadamente. El resto de las variables están dentro de rangos esperados, pero muestran una amplia dispersión.
+Primero, realizamos un análisis descriptivo de las variables numéricas. Esto nos permite entender la distribución de cada variable y detectar posibles valores atípicos o rangos inconsistentes. En la variable `pregnant`, se observa que el máximo número de embarazos es `r max(Diabetes_B$pregnant)`, lo que podría indicar la presencia de casos extremos o un valor inconsistente en la base de datos. La variable `insulin` muestra una gran variabilidad, con un máximo de `r max(Diabetes_B$insulin)` mug/ml fuera del rango esperado, lo que podría afectar el análisis si no se maneja adecuadamente. El resto de las variables están dentro de rangos esperados, pero muestran una amplia dispersión.
 
 ```{r binarias,  results = 'hide'}
-apply(Diabetes_B[,descDiabetes$variable[descDiabetes$tipo == "categorical"]], 2, table, useNA = "i")
+apply(Diabetes_B[, descDiabetes$variable[descDiabetes$tipo == "categorical"]], 2, table, useNA = "i")
 ```
 
 ```{r categoricas,  results = 'hide'}
-apply(Diabetes_B[,descDiabetes$variable[descDiabetes$tipo == "categorical"]], 2,
-      function (x) round(100*table(x)/sum(table(x)), 2))
+apply(
+  Diabetes_B[, descDiabetes$variable[descDiabetes$tipo == "categorical"]], 2,
+  function(x) round(100 * table(x) / sum(table(x)), 2)
+)
 ```
 
 Como todas las variables categóricas varían suficientemente, lo que significa que son variables aleatorias y tiene sentido incluirlas en el análisis, se las deja todas.
 
-Ahora, analizamos si alguna variable tiene valores anómalos mediante un análisis univariante. Para esto, se han generado diagramas de caja (boxplots) para cada variable numérica, utilizando una escala logarítmica en el eje y para facilitar la visualización de los datos con rangos muy dispares. 
+Ahora, analizamos si alguna variable tiene valores anómalos mediante un análisis univariante. Para esto, se han generado diagramas de caja (boxplots) para cada variable numérica, utilizando una escala logarítmica en el eje y para facilitar la visualización de los datos con rangos muy dispares.
+
 ```{r boxplot, fig.height=4.5, fig.width=6}
-#par(mar = c(9,4,2,2))
-boxplot(Diabetes_B[,descDiabetes$variable[descDiabetes$tipo == "numerical"]], log = "y", las = 2, ylim = c(1e-1, 1e3))
+# par(mar = c(9,4,2,2))
+boxplot(Diabetes_B[, descDiabetes$variable[descDiabetes$tipo == "numerical"]], log = "y", las = 2, ylim = c(1e-1, 1e3))
 ```
 
 ```{r discrepancias, fig.show='hide'}
-par(mfrow = c(1,2))   # mfcol
+par(mfrow = c(1, 2)) # mfcol
 hist(Diabetes_B$insulin, 50)
 boxplot(Diabetes_B$insulin, xlab = "insulin")
 
-par(mfrow = c(1,2))   # mfcol
+par(mfrow = c(1, 2)) # mfcol
 hist(Diabetes_B$pedigree, 50)
 boxplot(Diabetes_B$pedigree, xlab = "pedigree")
 
-par(mfrow = c(1,2))   # mfcol
+par(mfrow = c(1, 2)) # mfcol
 hist(Diabetes_B$leptin, 50)
 boxplot(Diabetes_B$leptin, xlab = "leptin")
 ```
 
 Se observa que las variables `insulin`, `pedigree` y `leptin` tienen muchos valores anómalos. Después de investigar sus distribuciones, no se detectan inconsistencias y mantendremos las observaciones anómalas en la BBDD.
 
-# Análisis de Componentes Principales
+# 2. Análisis de Componentes Principales
 
-## Tratamiento de los datos
+## 2.1 Tratamiento de los datos
+
 El siguiente paso crítico es entender **cómo se relacionan las variables entre sí**. Esto nos permite detectar dos cosas importantes: la redundancia/colinealidad y la asociación con la variable target. Si dos variables númericas están muy correlacionadas, podríamos eliminar una de ellas para simplificar el modelo predictivo o agruparlas en una variable latente que recoge la información de las dos, usando PCA. Para la asociación, podemos observar si variables concretas discriminan bien nuestra variable objetivo (`diabetes`).
 
 ```{r bivariado categorico, results='hide'}
 # Convertimos el texto a factor para poder tabular
-Diabetes_B$vegdiet = as.factor(Diabetes_B$vegdiet)
+Diabetes_B$vegdiet <- as.factor(Diabetes_B$vegdiet)
 # Creamos una tabla cruzada
-tabla_cruzada = table(Diabetes_B$vegdiet, Diabetes_B$diabetes)
+tabla_cruzada <- table(Diabetes_B$vegdiet, Diabetes_B$diabetes)
 # Le agregamos márgenes y mostramos proporciones
 cat("--- Frecuencias Absolutas ---\n")
 print(tabla_cruzada)
 cat("\n--- Proporciones por Fila (Sabiendo la Dieta, ¿qué % es Diabético?) ---\n")
 round(prop.table(tabla_cruzada, 1) * 100, 2)
-``` 
+```
 
 Después de un análisis bivariado de las dos variables categóricas, se observa que la variable `vegdiet` es totalmente inútil para predecir si alguien tendrá diabetes, debido a que los perfiles de filas son iguales independientemente de la dieta del paciente. Podría ser candidata a ser desechada sin afectar al aprendizaje general.
 
@@ -135,36 +138,37 @@ Después de un análisis bivariado de las dos variables categóricas, se observa
 library(PLSandO)
 
 # Definimos las variables nutricionales/metabólicas (excluyendo 'diabetes' y 'vegdiet')
-vars_pca = descDiabetes$variable[descDiabetes$tipo == "numerical"]
+vars_pca <- descDiabetes$variable[descDiabetes$tipo == "numerical"]
 ```
+
 Para la ejecución del modelo PCA, se han seleccionado exclusivamente las *variables de naturaleza numérica*, ya que este análisis se basa en el cálculo de varianzas y covarianzas que requieren datos continuos. Se han excluido las variables categóricas, como la dieta (vegdiet) por las razones mencionadas antes y el diagnóstico final (diabetes), con el fin de que la estructura de las componentes principales se construya únicamente a partir de los biomarcadores metabólicos y antropométricos. Esto nos permitirá observar cómo la variabilidad biológica de las pacientes agrupa los datos de forma natural antes de contrastarlos con el diagnóstico real.
 
 Como hemos visto antes, no hay valores faltantes ni variables que tienen baja variabilidad, y tampoco vamos a incluir las variables categóricas, entonces no hace falta aplicar la función **Preparing()** de la librería *PLSandO* para limpiar los datos.
 
 Como se observa en el resumen estadístico de los datos, las variables presentan rangos muy dispares (p.ej., la `insulin` varía entre `r min(Diabetes_B$insulin)` y `r max(Diabetes_B$insulin)`, mientras que `pedigree` se mueve entre `r min(Diabetes_B$pedigree)` y `r max(Diabetes_B$pedigree)`). Por ello, aplicaremos un escalado unitario en el modelo para evitar que las variables con magnitudes mayores dominen artificialmente la varianza del modelo, permitiendo que cada biomarcador tenga el mismo peso específico.
 
-## Selección del número de componentes principales
+## 2.2 Selección del número de componentes principales
 
-Aplicamos la función **pca()** sobre las variables númericas seleccionadas. La función las centra y las escala a varianza unitaria. También, se estimará el máximo número de PCs posible. 
+Aplicamos la función **pca()** sobre las variables númericas seleccionadas. La función las centra y las escala a varianza unitaria. También, se estimará el máximo número de PCs posible.
 
 ```{r pca inicial, include=FALSE}
 # Ejecutamos el modelo PCA inicial
 # Usamos scaling = "standard" para realizar el centrado y escalado unitario
-diabetesPCA = Diabetes_B[, vars_pca]
-mipca = pca(diabetesPCA, ncomp = NULL, algo = "nipals", scaling = "standard")
+diabetesPCA <- Diabetes_B[, vars_pca]
+mipca <- pca(diabetesPCA, ncomp = NULL, algo = "nipals", scaling = "standard")
 ```
 
 Para decidir el número de PCs a retener, vamos a mirar el *scree plot* y también la tabla con la varianza explicada por cada PC y la acumulada.
 
 ```{r scree plot, fig.height=4, fig.width=5}
 # Visualizamos el Scree Plot
-pcaPlot(mipca, type = 'scree')
+pcaPlot(mipca, type = "scree")
 ```
 
 ```{r tabla eig}
 library(knitr)
-K = 4
-kable(mipca$explVar[1:K,])
+K <- 4
+kable(mipca$explVar[1:K, ])
 ```
 
 Vamos a retener aquellas PCs que expliquen más varianza que la media, representada por la línea roja en el gráfico, entonces elegiríamos 3 PCs, aunque la PC 4 está muy cerca también. Usando el criterio del codo nos quedamos con `r K` PCs que explican un `r round(mipca$explVar[K,"cumPercVar"],1)`% de la varianza total de los datos.
@@ -173,106 +177,183 @@ Ahora, vamos a visualizar las PCs seleccionadas para ver si hay una componente q
 
 ```{r scores y corr iniciales, fig.height=8, fig.width=9, fig.show='hide'}
 library(gridExtra)
-p1 = pcaPlot(mipca, type = 'scores', comp = 1:2, colBy = NULL, labels = TRUE,
-             labelTop = 0.1, repel = TRUE)
-p2 = pcaPlot(mipca, type = 'scores', comp = 3:4, colBy = NULL, labels = TRUE,
-             labelTop = 0.1, repel = TRUE)
-p3 = pcaPlot(mipca, type = 'corr', comp = 1:2, colBy = "contrib", 
-             labels = TRUE, repel = TRUE, col = "hot")
-p4 = pcaPlot(mipca, type = 'corr', comp = 3:4, colBy = "contrib", 
-             labels = TRUE, repel = TRUE, col = "hot")
-grid.arrange(p1,p2,p3,p4, nrow = 2)
+p1 <- pcaPlot(mipca,
+  type = "scores", comp = 1:2, colBy = NULL, labels = TRUE,
+  labelTop = 0.1, repel = TRUE
+)
+p2 <- pcaPlot(mipca,
+  type = "scores", comp = 3:4, colBy = NULL, labels = TRUE,
+  labelTop = 0.1, repel = TRUE
+)
+p3 <- pcaPlot(mipca,
+  type = "corr", comp = 1:2, colBy = "contrib",
+  labels = TRUE, repel = TRUE, col = "hot"
+)
+p4 <- pcaPlot(mipca,
+  type = "corr", comp = 3:4, colBy = "contrib",
+  labels = TRUE, repel = TRUE, col = "hot"
+)
+grid.arrange(p1, p2, p3, p4, nrow = 2)
 ```
+
 En las 2 primeras PCs observamos algunos pacientes un poco más alejados que el resto, y uno en la componente 3, que puede ser las variables `insulin`, `pedigree` o `glucose`. Veremos más adelante si se pueden considerar anómalos y qué hacemos con ellos.
 
-La componente 4 es recogida totalmente por la variable `leptin`, la variable que mide la saciedad y el gasto energético. Como hemos visto antes, tiene algunas observaciones fuera del rango esperado, las cuales podrían influir en el modelo. Vamos a investigar si esas observaciones afectan al modelo o son valores anómalos. 
+La componente 4 es recogida totalmente por la variable `leptin`, la variable que mide la saciedad y el gasto energético. Como hemos visto antes, tiene algunas observaciones fuera del rango esperado, las cuales podrían influir en el modelo. Vamos a investigar si esas observaciones afectan al modelo o son valores anómalos.
 
-## Validación del modelo
+## 2.3 Validación del modelo
 
-## Detección de anómalos moderados con la distancia al modelo (SCR)
+### 2.3.1 Detección de anómalos moderados con la distancia al modelo (SCR)
 
 Para detectar las observaciones (pacientes) que no están bien explicadas por nuestro modelo PCA, estudiaremos sus distancias al modelo mediante la Suma de Cuadrados Residual (SCR)
 
 ```{r scr, fig.width=8, fig.height=4}
-par(mfrow = c(1,2))
-anomSCR95 = pcaOutliers(mipca, method = "RSS", conf = 95)
-anomSCR99 = pcaOutliers(mipca, method = "RSS", conf = 99)
+par(mfrow = c(1, 2))
+anomSCR95 <- pcaOutliers(mipca, method = "RSS", conf = 95)
+anomSCR99 <- pcaOutliers(mipca, method = "RSS", conf = 99)
 ```
+
 ```{r moderados, results='hide'}
-moderados = sort(anomSCR95$RSS[anomSCR95$ModerateOutliers], decreasing = TRUE)
+moderados <- sort(anomSCR95$RSS[anomSCR95$ModerateOutliers], decreasing = TRUE)
 moderados
 ```
-Hay `r length(anomSCR95$ModerateOutliers)` pacientes que se salen fuera del límite del 95%, y `r length(anomSCR99$ModerateOutliers)` fuera del límite del 99%. Veamos qué variables contribuyen más a las anomalías de los pacientes con mayor SCR: `r names(moderados[1:3])`. 
+
+Hay `r length(anomSCR95$ModerateOutliers)` pacientes que se salen fuera del límite del 95%, y `r length(anomSCR99$ModerateOutliers)` fuera del límite del 99%. Veamos qué variables contribuyen más a las anomalías de los pacientes con mayor SCR: `r names(moderados[1:3])`.
 
 ```{r contrib scr modelo, fig.width=9, fig.height=4, results='hide', fig.show='hide'}
-par(mfrow = c(1,3))
+par(mfrow = c(1, 3))
 outlierContrib(mipca, outliers = anomSCR95, specificObs = names(moderados[1:3]))
 ```
+
 ```{r boxplot scr, fig.height=4, fig.width=4, results='hide', fig.show='hide'}
 boxplot(mipca$X, las = 2, main = "Datos escalados")
-kable(round(mipca$X[names(moderados[1:3]),],2))
+kable(round(mipca$X[names(moderados[1:3]), ], 2))
 ```
-```{r scores scr, fig.show='hide'}
-scores_df = as.data.frame(mipca$scores)
-scores_df$Estado = "Normal"
-scores_df$Estado[rownames(scores_df) %in% anomSCR95$ModerateOutliers] = "Moderate"
 
-p1 = pcaPlot(mipca, type = 'scores', comp = 1:2, colBy = scores_df$Estado, 
-             labels = TRUE, labelTop = 0.1, repel = TRUE, ellipses = FALSE)
-p2 = pcaPlot(mipca, type = 'scores', comp = 3:4, colBy = scores_df$Estado, 
-             labels = TRUE, labelTop = 0.1, repel = TRUE, ellipses = FALSE)
+```{r scores scr, fig.show='hide'}
+scores_df <- as.data.frame(mipca$scores)
+scores_df$Estado <- "Normal"
+scores_df$Estado[rownames(scores_df) %in% anomSCR95$ModerateOutliers] <- "Moderate"
+
+p1 <- pcaPlot(mipca,
+  type = "scores", comp = 1:2, colBy = scores_df$Estado,
+  labels = TRUE, labelTop = 0.1, repel = TRUE, ellipses = FALSE
+)
+p2 <- pcaPlot(mipca,
+  type = "scores", comp = 3:4, colBy = scores_df$Estado,
+  labels = TRUE, labelTop = 0.1, repel = TRUE, ellipses = FALSE
+)
 grid.arrange(p1, p2, nrow = 1)
 ```
+
 Después de investigar dónde situan las observaciones, no representan valores anómalos debido a que representan variabilidad biológica real. Las observaciones `r54` y `r764` presentan mayor edad, pero no es un error en los datos. No excluiremos estos anómalos moderados de momento.
 
-## Detección de anómalos severos con T2-Hotelling
+### 2.3.2 Detección de anómalos severos con T2-Hotelling
 
 Para identificar los valores anómalos severos (los que sesgan la creación de las PCs), usamos el estadístico $T^2$ de Hotelling. Si una observación salen fuera de los límites y además tienen baja SCR, se considera un anómalo severo.
 
 ```{r T2, fig.width=8, fig.height=4}
-par(mfrow = c(1,2))
-anomSev95 = pcaOutliers(mipca, method = "T2", conf = 95)
-anomSev99 = pcaOutliers(mipca, method = "T2", conf = 99)
+par(mfrow = c(1, 2))
+anomSev95 <- pcaOutliers(mipca, method = "T2", conf = 95)
+anomSev99 <- pcaOutliers(mipca, method = "T2", conf = 99)
 ```
+
 ```{r t2 severos, results='hide'}
 anomSev95$T2[anomSev95$SevereOutliers]
 outlierContrib(mipca, outliers = anomSev99)
 ```
-```{r scores t2, fig.show='hide'}
-scores_df = as.data.frame(mipca$scores)
-scores_df$Estado = "Normal"
-scores_df$Estado[rownames(scores_df) %in% anomSev95$SevereOutliers] = "Anomalo"
 
-p1 = pcaPlot(mipca, type = 'scores', comp = 1:2, colBy = scores_df$Estado, 
-             labels = FALSE, labelTop = 0.1, repel = TRUE, ellipses = FALSE)
-p2 = pcaPlot(mipca, type = 'scores', comp = 3:4, colBy = scores_df$Estado, 
-             labels = FALSE, labelTop = 0.1, repel = TRUE, ellipses = FALSE)
+```{r scores t2, fig.show='hide'}
+scores_df <- as.data.frame(mipca$scores)
+scores_df$Estado <- "Normal"
+scores_df$Estado[rownames(scores_df) %in% anomSev95$SevereOutliers] <- "Anomalo"
+
+p1 <- pcaPlot(mipca,
+  type = "scores", comp = 1:2, colBy = scores_df$Estado,
+  labels = FALSE, labelTop = 0.1, repel = TRUE, ellipses = FALSE
+)
+p2 <- pcaPlot(mipca,
+  type = "scores", comp = 3:4, colBy = scores_df$Estado,
+  labels = FALSE, labelTop = 0.1, repel = TRUE, ellipses = FALSE
+)
 grid.arrange(p1, p2, nrow = 1)
 ```
 
 ```{r pca sin severos, fig.height=8, fig.width=9, fig.show='hide', results='hide'}
-Diabetes_Limpia = Diabetes_B[!rownames(Diabetes_B) %in% anomSev95$SevereOutliers, ]
-mipca_clean = pca(Diabetes_Limpia[, vars_pca], ncomp = NULL, scaling = "standard")
-p1 = pcaPlot(mipca_clean, type = 'scores', comp = 1:2, colBy = NULL, labels = TRUE,
-             labelTop = 0.1, repel = TRUE)
-p2 = pcaPlot(mipca_clean, type = 'scores', comp = 3:4, colBy = NULL, labels = TRUE,
-             labelTop = 0.1, repel = TRUE)
-p3 = pcaPlot(mipca_clean, type = 'corr', comp = 1:2, colBy = "contrib", 
-             labels = TRUE, repel = TRUE, col = "hot")
-p4 = pcaPlot(mipca_clean, type = 'corr', comp = 3:4, colBy = "contrib", 
-             labels = TRUE, repel = TRUE, col = "hot")
-grid.arrange(p1,p2,p3,p4, nrow = 2)
+Diabetes_Limpia <- Diabetes_B[!rownames(Diabetes_B) %in% anomSev95$SevereOutliers, ]
+mipca_clean <- pca(Diabetes_Limpia[, vars_pca], ncomp = NULL, scaling = "standard")
+p1 <- pcaPlot(mipca_clean,
+  type = "scores", comp = 1:2, colBy = NULL, labels = TRUE,
+  labelTop = 0.1, repel = TRUE
+)
+p2 <- pcaPlot(mipca_clean,
+  type = "scores", comp = 3:4, colBy = NULL, labels = TRUE,
+  labelTop = 0.1, repel = TRUE
+)
+p3 <- pcaPlot(mipca_clean,
+  type = "corr", comp = 1:2, colBy = "contrib",
+  labels = TRUE, repel = TRUE, col = "hot"
+)
+p4 <- pcaPlot(mipca_clean,
+  type = "corr", comp = 3:4, colBy = "contrib",
+  labels = TRUE, repel = TRUE, col = "hot"
+)
+grid.arrange(p1, p2, p3, p4, nrow = 2)
 ```
+
 Se detectaron `r length(anomSev99$SevereOutliers)` anómalos severos mediante el estadístico $T^2$ de Hotelling al 99% de confianza. Se procedió a eliminar esas observaciones de la base de datos y creó un nuevo modelo PCA sin ellas. Al comparar los resultados, se observaçó que la varianza explicada y la orientación de las cargas permanecen invariantes. Esto demuestra que el modelo es robusto y que la estructura biológica detectada no depende de casos aislados, sino que representa la tendencia general de la muestra.
 
 Dado que el modelo PCA muestra robustez frente a la presencia de valores extremos y asimetría en variables como la `insulina` y `leptina`, no hace falta aplicar transformaciones para suavizar los anómalos, garantizando que la interpretación de los resultados del modelo sea directa.
 
-## Interpretación del modelo
+```{r pca final, results='hide'}
+K <- 4
+mipca <- pca(diabetesPCA,
+  ncomp = K,
+  algo = "nipals", scaling = "standard"
+)
+```
 
-<!-- Interpretación del gráfico de scores y de loadings o de variables. -->
+## 2.4 Interpretación del modelo
 
-## Conclusiones
+Para analizar de manera visual cómo contribuye cada variable a las componentes, a continuación representamos los pesos de las características en cada dimensión retenida:
+
+```{r graficas loadings, fig.height=6, fig.width=9}
+loadings_matrix <- mipca$loadings
+par(mfrow = c(2, 2), mar = c(6, 4, 3, 1))
+for (i in 1:4) {
+  cargas <- loadings_matrix[, i]
+  cargas_ordenadas <- cargas[order(abs(cargas), decreasing = TRUE)]
+
+  colores <- ifelse(cargas_ordenadas > 0, "dodgerblue4", "firebrick")
+
+  barplot(cargas_ordenadas,
+    las = 2, col = colores,
+    main = paste("Pesos (Loadings) en la PC", i),
+    ylab = "Peso", cex.names = 0.8
+  )
+}
+```
+
+**Gráfico** $R^2$
+
+El siguiente gráfico muestra el porcentaje de variabilidad de cada variable (k) que queda explicado por el modelo PCA.
+
+```{r}
+pcaPlot(mipca, type = "R2")
+```
+
+Al analizar estos gráficos de *loadings* de las 4 componentes principales retenidas, podemos dar una interpretación clínica a cada una de ellas:
+
+-   **Componente 1 (PC1 - 27.0% varianza)**: Todos sus *loadings* principales son positivos. Está dominada por el Índice de Masa Corporal (`mass`), adiposidad (`triceps`), marcadores de inflamación (`CRP`), `glucose` y `age`. Esta componente captura un factor general de **"Síndrome Metabólico y Obesidad"**. Valores altos en la PC1 corresponden a pacientes con un peor estado metabólico general, con mayor peso, inflamación y niveles de glucosa, que son claros factores de riesgo para la diabetes.
+-   **Componente 2 (PC2 - 15.7% varianza)**: Contrasta fuertemente la edad y el número de embarazos (pesos negativos: `pregnant` -0.55 y `age` -0.50) frente a marcadores de obesidad y grasa (pesos positivos: `mass` 0.39, `CRP` 0.30 y `triceps` 0.28). Esta componente diferencia un perfil de **"Pacientes mayores multíparas"** (puntuación negativa en PC2) frente a un perfil de **"Pacientes más jóvenes con mayor grado de obesidad/inflamación"** (puntuación positiva).
+-   **Componente 3 (PC3 - 11.4% varianza)**: Actúa como una balanza que separa la resistencia insulínica/genética del riesgo cardiovascular tradicional. En el espectro negativo agrupa `insulin`, `glucose` y `pedigree` (carga genética), y en el espectro positivo agrupa `cholesterol` y `pressure` (presión arterial). Esto indica la existencia de dos perfiles clínicos algo distintos entre las pacientes con riesgo biológico.
+-   **Componente 4 (PC4 - 9.0% varianza)**: Está dominada casi enteramente por la `leptin` (peso de 0.88), con muy poca contribución del resto de variables. Esto sugiere que la variabilidad de la hormona que regula la saciedad tiene una evolución bastante independiente al resto de marcadores de sobrepeso analizados.
+
+## 2.5 Conclusiones
+
+El Análisis de Componentes Principales ha permitido sintetizar con éxito la alta dimensionalidad de los 11 biomarcadores y características demográficas en tan solo **4 nuevas variables latentes (PCs)**, reteniendo aproximadamente el **63%** de la variabilidad original.
+
+Hemos demostrado que las diferentes medidas clínicas están correlacionadas y se agrupan en perfiles clínicos bien diferenciados: un estado metabólico adverso/obesidad general (PC1), un eje de edad y factores vinculados al embarazo frente a fenotipos con alta adiposidad independiente de la edad (PC2), la diferenciación entre vías ligadas a resistencia a la insulina cardiometabólico y vías ligadas a factores genéticos/glucémicos (PC3) y una vía independiente liderada por la leptina (PC4).
+
+Esta reducción no solo simplifica la complejidad del conjunto de datos, sino que elimina el ruido introducido por variables fuertemente ligadas entre sí (colinealidad). Además proporciona características ortogonales e interpretables, ideales para entrenar modelos predictivos (por ejemplo, para clasificar si una paciente padece diabetes o no), disminuyendo el riesgo de sobreajuste.
 
 # Reglas de asociación [OPCIONAL. 2 páginas máximo]
-
-# Análisis Factorial de Correspondencias [OPCIONAL. 2 páginas máximo]
