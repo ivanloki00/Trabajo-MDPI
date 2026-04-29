@@ -1,0 +1,87 @@
+---
+title: "Título del trabajo"
+author: "NOMBRES Y APELLIDOS de los autores (Grupo XX-XX)"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, cache = FALSE, include = TRUE, warning = FALSE)
+library(tinytex)
+```
+
+
+
+# Descripción de la BBDD  [1 página máximo]
+
+<!-- Describir la BBDD de la que partimos en esta 2ª entrega, ya que es posible que la hayáis modificado en la 1ª entrega. -->
+
+<!-- Incluir tabla con las variables, su descripción y el tipo de variable (numérica, categórica nominal, categórica ordinal, identificador, fecha, etc.) -->
+
+<!-- Indicar el número de observaciones en la BBDD. -->
+
+
+
+
+# Análisis Clustering  [5 páginas máximo]
+
+
+## Descripción de los datos utilizados
+
+<!-- Selección de variables a incluir en el modelo? Centrado y escalado? Transformación de variables? -->
+
+
+## Elección de la medida de distancia y tendencia de agrupamiento
+
+
+
+
+## Determinación del número de clústeres
+
+
+
+
+## Comparación de métodos de clustering
+
+<!-- Indicar claramente el método elegido y justificar la decisión. -->
+
+
+## Interpretación de los resultados del clustering
+
+### Caracterización de los clústeres obtenidos
+
+
+### Relación de los clústeres con otras variables 
+
+
+
+# Modelos PLS  [5 páginas máximo]
+
+## Descripción de los datos utilizados y objetivo
+
+<!-- Selección de variables a incluir en el modelo? Centrado y escalado? Transformación de variables? -->
+
+<!-- Indicar si se va a aplicar PLS o PLS-DA y justificarlo. -->
+
+
+## Optimización del modelo
+
+<!-- Determinación del número de componentes y procedimiento empleado para estimarlo -->
+
+
+## Validación del modelo
+
+
+## Interpretación del modelo
+
+
+## Conclusiones
+
+
+
+
+# Análisis Discriminante  [OPCIONAL. 2 páginas máximo]
+
+
+
