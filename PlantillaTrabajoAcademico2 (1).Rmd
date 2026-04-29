@@ -25,9 +25,14 @@ library(tinytex)
 
 <!-- Indicar el número de observaciones en la BBDD. -->
 
+```{r carga datos, include=FALSE}
+load("09B_Diabetes.RData")
+Diabetes_B
+```
 
+Cargamos los datos. Se han registrado `r nrow(Diabetes_B)` observaciones iniciales.
 
-
+Creamos una tabla descriptiva de las variables presentes en la base de datos, indicando su tipo (numérica o categórica) y una breve descripción de cada una. Esta tabla es fundamental para entender el contexto de cada variable y su posible relevancia y uso en el análisis posterior.
 # Análisis Clustering  [5 páginas máximo]
 
 
