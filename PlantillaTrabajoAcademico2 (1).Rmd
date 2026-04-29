@@ -1,8 +1,12 @@
 ---
-title: "Título del trabajo"
-author: "NOMBRES Y APELLIDOS de los autores (Grupo XX-XX)"
+title: "Investigación de la Influencia de Biomarcadores y Factores Demográficos en Diabetes"
+author: "Isabelle Archer, Lucía del Carmen Fito Fito, Iván Navarro Martínez, Ruben
+  Saiz López (Grupo B1-08)"
 date: "`r Sys.Date()`"
-output: pdf_document
+output:
+    pdf_document: default
+     html_document:
+    df_print: paged
 ---
 
 
