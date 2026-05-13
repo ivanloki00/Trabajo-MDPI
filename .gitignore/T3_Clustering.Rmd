@@ -1,0 +1,665 @@
+---
+title: "Análisis Clustering"
+author: "Sonia Tarazona"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    number_sections: false
+    toc_depth: 2
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+---
+
+```{r setup, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(mice)
+library(cluster)
+library(factoextra)
+library(NbClust)
+library(clValid)
+library(PLSandO)
+library(aricode)
+library(biostatcolors)
+```
+
+
+
+# CEREALES
+
+## Lectura datos
+
+Para esta parte de la práctica, recuperamos los datos de cereales procesados en la práctica de PCA:
+
+```{r}
+load("cerealsClustering.RData", verbose = TRUE)
+```
+
+El objeto *cerePCA* ya contiene solamente el *rating* y las variables que corresponden a parámetros nutricionales.
+
+
+
+## Selección de variables a utilizar y preparación de datos
+
+El objetivo es encontrar grupos de cereales con similar contenido nutricional. Por ello, utilizaremos para el clustering solo los parámetros nutricionales. Después, ya trataremos de relacionar los clusters obtenidos con la variable *rating*  o con las demás variables no consideradas en el análisis clustering.
+
+Recordemos que había 2 valores faltantes en la variable *potass*. En PCA utilizamos el algoritmo NIPALS, que admite valores faltantes. Sin embargo, no todos los algoritmos de clustering admiten faltantes, por lo que habrá que imputar estos valores. Lo haremos con la librería *mice*.
+
+
+```{r selvar, fig.width=3.5, fig.height=3.5}
+cereals = subset(cerePCA, select = -rating)
+cereImp = mice(cereals, seed = 123, m=1, print=FALSE, method=NULL)
+cereals2 = complete(cereImp)
+```
+
+
+Escalaremos los datos, puesto que cada variable está medida en diferentes unidades y magnitudes y no queremos que esto interfiera en la agrupación.
+
+```{r, fig.width=3.5, fig.height=3.5}
+cereals2 = scale(cereals2, center = TRUE, scale = TRUE)
+```
+
+
+
+
+
+## Medida de distancia y tendencia de agrupamiento
+
+Se utilizará como medida de distancia la distancia euclídea, ya que en este caso nos interesa agrupar cereales con valores de parámetros nutricionales similares, y no con perfiles similares en dichos parámetros. 
+
+```{r dist, warning=FALSE, fig.height=4, fig.width=4.5}
+midist <- get_dist(cereals2, stand = FALSE, method = "euclidean")
+fviz_dist(midist, show_labels = FALSE, lab_size = 0.3, 
+          gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
+```
+
+El mapa de color nos muestra que parece haber un grupo grande de cereales y después tenemos varios clusters más pequeños. Observamos también que hay algunos cereales que están bastante lejos del resto, son diferentes de todos los demás. Esto apunta a que tal vez en este ejemplo sería más aconsejable utilizar la distancia de Manhattan, ya que es un poco más robusta frente a los valores extremos. Otra opción podría ser identificar estos valores extremos y hacer el análisis de clustering con el resto de cereales. 
+
+----------
+
+*EJERCICIO 1*
+
+*Otra posible medida de distancia para agrupar cereales con valores similares en sus parámetros nutricionales es la distancia de Manhattan. Genera el mapa de calor con la distancia de Manhattan y compáralo con el obtenido para la distancia euclídea. ¿Qué medida de distancia consideras que proporciona una tendencia de agrupamiento más clara? ¿Cuál gestiona mejor los posibles cereales anómalos?*
+
+----------
+
+
+Proseguimos con la distancia euclídea y calculamos el índice de Hopkins para verificar numéricamente que hay tendencia de agrupamiento en nuestros datos.
+
+```{r hopkins}
+set.seed(100)
+myN = c(20, 35, 50, 65)  # m
+myhopkins = NULL
+myseed = sample(1:1000, 10)
+for (i in myN) {
+  for (j in myseed) {
+    tmp = get_clust_tendency(data = cereals2, n = i, graph = FALSE, seed = j)
+    myhopkins = c(myhopkins, tmp$hopkins_stat)
+  }
+}
+summary(myhopkins)
+```
+
+
+El estadístico de Hopkins nos confirma una cierta tendencia de agrupamiento, puesto que ha sido calculado para diferentes valores de m (n en la función) y con diferentes semillas aleatorias y sus valores oscilan entre `r round(min(myhopkins),2)` y `r round(max(myhopkins),2)`, es decir, están cercanos a 1.
+
+
+----------
+
+*EJERCICIO 2*
+
+*La función aplicada para calcular el estadístico de Hopkins utiliza la distancia euclídea, por lo que no es posible utilizarla si elegimos otra medida de distancia. Crea tu propia función para calcular el estadístico de Hopkins, de forma que te permita elegir la medida de distancia a utilizar.*
+
+----------
+
+
+
+
+
+## Modelos jerárquicos
+
+Para no alargar demasiado la práctica, en este caso solo compararemos el método de Ward y el método de la media, aunque sería aconsejable comparar más métodos de unión de clusters. 
+
+### Método de Ward
+
+En primer lugar, obtendremos el número de clusters óptimo para este algoritmo. Podemos aplicar distintos criterios. En nuestro caso combinaremos el análisis del coeficiente de Silhouette con la variabilidad intra-cluster. 
+
+```{r koptJERward, fig.width=6, fig.height=3}
+library(gridExtra)
+p1 = fviz_nbclust(x = cereals2, FUNcluster = hcut, method = "silhouette", 
+                  hc_method = "ward.D2", k.max = 10, verbose = FALSE, 
+                  hc_metric = "euclidean") + labs(title = "Num. optimo clusters")
+p2 = fviz_nbclust(x = cereals2, FUNcluster = hcut, method = "wss", 
+                  hc_method = "ward.D2", k.max = 10, verbose = FALSE, 
+                  hc_metric = "euclidean") + labs(title = "Num. optimo clusters")
+grid.arrange(p1, p2, nrow = 1)
+```
+
+
+Los resultados para el coeficiente Silhouette indican que el número óptimo de clusters es 6, y para ese número de clusters, la variabilidad intra-cluster ya baja bastante y, además, parece el punto en el que se crea el codo. Por tanto, fijaremos el número de clusters en 6. 
+
+Creamos a continuación los 6 clusters con el modelo jerárquico y el método de Ward. Dado que el número de observaciones lo permite, generaremos el dendrograma para visualizar la agrupación de los cereales.
+
+```{r ward, fig.width=8, fig.height=6, warning=FALSE}
+clust1 <- hclust(midist, method="ward.D2")
+grupos1 <- cutree(clust1, k=6)
+table(grupos1)
+fviz_dend(clust1, k = 6,
+          cex = 0.5, color_labels_by_k = TRUE,
+          rect = TRUE) # dibujar rectángulos
+# ¿Se agrupan todos los cereales con fibra (Bran) en el mismo cluster?
+rownames(cereals2)[grep("Bran", rownames(cereals2), ignore.case = TRUE)]
+which(grupos1 == 1)
+```
+
+
+Como podemos observar, el primer cluster está formado por cereales que comparten la etiqueta "Bran" y que deben tener un alto contenido en fibra. Por lo demás el resto de clusters está bastante equilibrado en cuanto a número de observaciones. 
+
+
+
+**Nota:** La función *fviz_cluster* nos permite visualizar los clusters cómoda y rápidamente en un PCA. Sin embargo, al final de la práctica, haremos un PCA más completo (como estudiamos en el Tema 1) que nos permitirá elegir correctamente el número de componentes principales y, sobre todo, interpretar los clusters a partir de los gráficos de variables. 
+
+
+
+----------
+
+*EJERCICIO 3*
+
+*Aplica un modelo PCA a las mismas variables utilizadas para el clustering y selecciona un número apropiado de PCs. Representa el gráfico de scores, coloreando las observaciones según el cluster al que pertenecen. ¿Qué conclusiones obtienes?*
+
+----------
+
+
+
+### Método de la media
+
+Ahora estimaremos el número óptimo de clusters para el algoritmo jerárquico con el método de la media.
+
+
+```{r koptJERmedia, fig.width=6, fig.height=3}
+p1 = fviz_nbclust(x = cereals2, FUNcluster = hcut, method = "silhouette", 
+                  hc_method = "average", k.max = 10, verbose = FALSE, 
+                  hc_metric = "euclidean") + labs(title = "Num. optimo clusters")
+p2 = fviz_nbclust(x = cereals2, FUNcluster = hcut, method = "wss", 
+                  hc_method = "average", k.max = 10, verbose = FALSE, 
+                  hc_metric = "euclidean") + labs(title = "Num. optimo clusters")
+grid.arrange(p1, p2, nrow = 1)
+```
+
+
+Los resultados para el coeficiente Silhouette indican que el número óptimo de clusters es claramente 2, con una suma de cuadrados intra-cluster demasiado elevada. El siguiente óptimo de Silhoutte es 10 clusters, ya con menor suma de cuadrados intra-cluster. Nos quedaremos con 9 clusters, que sigue siendo un número elevado para el número de cereales a agrupar, pero al menos tiene una baja variabilidad intra-cluster. 
+
+
+```{r media, fig.width=8, fig.height=6, warning=FALSE}
+clust2 <- hclust(midist, method="average")
+grupos2 = cutree(clust2, k = 9)
+fviz_dend(clust2, k = 9,
+          cex = 0.5,
+          color_labels_by_k = TRUE, # colorear etiquetas por grupo
+          rect = TRUE) # dibujar rectángulos
+table(grupos2)
+```
+
+Sin embargo, cuando observamos el dendrograma y el número de observaciones por cluster, vemos que este método propociona clusters más desequilibrados: tres de ellos con una o dos observaciones y otro más heterogéneo con muchas observaciones: `r max(table(grupos2))`.
+
+Es por ello que, en este estudio concreto, decidimos descartar el método de la media y compararemos el método de Ward con los métodos de clustering de partición.
+
+
+
+
+----------
+
+*EJERCICIO 4*
+
+*Utiliza la distancia de Manhattan para generar de nuevo los clusters con el algoritmo jerárquico y los métodos de la media y de Ward. Comenta las diferencias en los resultados respecto a la distancia euclídea.*
+
+----------
+
+
+
+
+## Métodos de partición
+
+### K-medias
+
+En primer lugar, aplicaremos el algoritmo de k-medias y determinaremos el número óptimo de clusters para este algoritmo.   
+
+```{r koptKmeans, fig.width=6, fig.height=3}
+p1 = fviz_nbclust(x = cereals2, FUNcluster = kmeans, method = "silhouette", 
+             k.max = 10, verbose = FALSE) +   labs(title = "K-means")
+p2 = fviz_nbclust(x = cereals2, FUNcluster = kmeans, method = "wss", 
+             k.max = 10, verbose = FALSE) +   labs(title = "K-means")
+grid.arrange(p1, p2, nrow = 1)
+```
+
+Según Silhouette, el óptimo es 10 clusters, aunque el valor del coeficiente es muy similar a 5 clusters, donde la variabilidad intra-cluster ya ha disminuido bastante. Por tanto, nos quedamos con 5 clusters.
+
+Otra alternativa, es utilizar la librería *NbClust*, que aplica varios criterios y elegir el número de clusters más votado (por más criterios diferentes). Lo aplicaremos entre 5 y 9 clusters: 
+
+```{r koptKmeansBis, fig.width=6, fig.height=3}
+res.nbclust <- NbClust(data = cereals2, diss = midist, distance = NULL, 
+                        min.nc = 5, max.nc = 9, 
+                        method = "kmeans", index ="all") 
+```
+
+En este caso, el número óptimo de clusters según *NbClust* (el más votado) es claramente 6. Nos quedaremos, pues, con 6 clusters.
+
+
+
+-----------
+
+**Nota:** La función *NbClust* también se puede aplicar con los algoritmos de clustering jerárquico. 
+
+-----------
+
+
+
+
+```{r kmeans, fig.width=3, fig.height=3}
+set.seed(100)
+clust3 <- kmeans(cereals2, centers = 6, nstart = 20)
+table(clust3$cluster)
+clust3$cluster[clust3$cluster == 2]
+```
+
+Como vemos, se vuelve a crear un cluster con 3 tipos de cereales, los de más contenido en fibra.
+
+
+
+----------
+
+*EJERCICIO 5*
+
+*A partir del modelo PCA obtenido en el Ejercicio 2, representa de nuevo el gráfico de scores, coloreando ahora las observaciones por el cluster al que pertenecen según el algoritmo k-medias. ¿Qué conclusiones obtienes?*
+
+----------
+
+
+
+
+### K-medoides
+
+Probaremos como última opción el método de los k-medoides que debería ser más robusto frente a los valores atípicos.
+
+Determinaremos, en primer lugar, el número óptimo de clusters. 
+
+```{r koptPam, fig.width=6, fig.height=3}
+p1 = fviz_nbclust(x = cereals2, FUNcluster = pam, method = "silhouette", 
+             k.max = 10, verbose = FALSE) +
+  labs(title = "Numero optimo de clusters")
+p2 = fviz_nbclust(x = cereals2, FUNcluster = pam, method = "wss", 
+             k.max = 10, verbose = FALSE) +
+  labs(title = "Numero optimo de clusters")
+grid.arrange(p1, p2, nrow = 1)
+```
+
+
+Según el criterio de Silhouette, el número óptimo de clusters sería 9. No obstante, en 7 parece que empieza el codo en el gráfico de la variabilidad intra-cluster y tiene un buen valor también en el coeficiente de Silhouette. Por tanto, nos quedamos con 7 clusters.
+
+
+```{r pam, fig.width=3, fig.height=3}
+clust4 <- pam(cereals2, k = 7)
+table(clust4$clustering)
+clust4$clustering[clust4$clustering == 1]
+```
+
+De nuevo aparece el cluster con los 3 cereales con alto contenido en fibra.
+
+
+
+----------
+
+*EJERCICIO 6*
+
+*A partir del modelo PCA obtenido en el Ejercicio 2, representa de nuevo el gráfico de scores, coloreando ahora las observaciones por el cluster al que pertenecen según el algoritmo k-medoides. ¿Qué conclusiones obtienes?*
+
+
+----------
+
+*EJERCICIO 7*
+
+*Supongamos que nos interesa agrupar los cereales con perfiles similares, aunque no tengan valores similares en los parámetros nutricionales. Define una medida de distancia apropiada y utilízala para obtener clusters mediante el algoritmo de k-medoides.*
+
+----------
+
+
+
+
+## Selección y validación del método de clustering 
+
+A la vista de los resultados anteriores, es difícil decantarse por un método en concreto ya que ofrecen resultados similares en algunos casos y aparecen siempre clusters bien diferenciados. 
+
+Para tomar una decisión, analizaremos en primer lugar el coeficiente de Silhouette por cluster y por observación (no solamente el global como hasta ahora):
+
+
+```{r silhouette, fig.width=9, fig.height=4, warning=FALSE}
+colores = biostatcolors::getbiostatColors()[1:6]
+colores2 = biostatcolors::getbiostatColors()[1:7]
+par(mfrow = c(1,3))
+plot(silhouette(grupos1, midist), col=colores, border=NA, main = "WARD")
+plot(silhouette(clust3$cluster, midist), col=colores, border=NA, main = "K-MEDIAS")
+plot(silhouette(clust4$clustering, midist), col=colores2, border=NA, main = "K-MEDOIDES")
+```
+
+Según los coeficientes Silhouette globales, el mejor resultado es para el algoritmo k-medias, ya que presenta el mayor coeficiente (0.31, aunque con poca diferencia con Ward). El mejor cluster en k-medias tiene coeficiente 0.54, similar a k-medoides pero inferior al mejor cluster de Jerárquico-Ward (0.61). El peor cluster para k-medias tiene un Silhouette medio de 0.21, que es mejor que el 0.16 de Ward o el 0.11 de k-medoides. Además, k-medias tiene menos cereales mal clasificados (es decir, con coeficiente negativo), por lo que, teniendo en cuenta todo esto, nos decantaremos por el método k-medias.
+
+A continuación aplicaremos otros métodos de validación del clustering: 
+
+
+```{r validation, fig.width=9, fig.height=3,}
+metodos = c("hierarchical","kmeans","pam")
+validacion = suppressMessages(clValid(cereals2, nClust = 5:7, metric = "euclidean", 
+                      clMethods = metodos, 
+                      validation = c("internal", "stability"),
+                      method = "ward"))
+summary(validacion)
+# optimalScores(validacion)
+```
+
+Curiosamente, las medidas de estabilidad dan como ganador el método PAM, mientras que las internas se decantan por jerárquico con Ward o k-medias (con 6 clusters). Mantendremos, pues, la elección del método de k-medias con 6 clusters.
+
+Además, si para ver cómo de similares son las agrupaciones proporcionadas por el clustering jerárquico con el método de Ward y el método de k-medias, podemos calcular el ARI:
+
+```{r}
+ARI(grupos1, clust3$cluster)
+```
+
+El valor de ARI indica que la similitud entre los agrupamientos es alta, pero no presentan una equivalencia perfecta.
+
+
+----------
+
+*EJERCICIO 8*
+
+*Genera el gráfico del Coeficiente de Silhouette por cluster y observación para comparar la agrupación de k-medias en 5, 6 y 7 clusters. A la vista de estos resultados, ¿crees que la elección de 6 clusters es la más apropiada?*
+
+----------
+
+
+
+
+## Interpretación de los resultados del clustering
+
+En primer lugar, vamos a realizar un análisis de PCA completo para ver cuáles de las variables utilizadas en el clustering han contribuido más a la determinación de los clusters obtenidos mediante k-medias.
+
+
+```{r PCAkmeans2a, fig.width=4, fig.height=3}
+misclust = factor(clust3$cluster)
+miPCA = pca(cereals2, scaling = "none")
+pcaPlot(miPCA, type = 'scree')
+K = 4
+kable(miPCA$explVar[1:K,])
+```
+
+
+En principio, sería suficiente con 3 componentes principales (PCs). Sin embargo, seleccionaremos 4 PCs y así visualizamos la PC1 con la PC2 y la PC3 con la PC4 (sin repetir ninguna). En este caso, no realizaremos la validación porque ya se hizo en la práctica del PCA con estas mismas variables e incluyendo además el *rating*.
+
+```{r PCAkmeans2b, fig.width=9, fig.height=8}
+names(colores) = as.character(1:6)
+p1 = pcaPlot(miPCA, type = 'scores', comp = 1:2, col = colores,
+             colBy = data.frame("clust" = misclust), labels = TRUE,
+             labelTop = 0.1, repel = TRUE)
+p2 = pcaPlot(miPCA, type = 'scores', comp = 3:4, col = colores,
+             colBy = data.frame("clust" = misclust), labels = TRUE,
+             labelTop = 0.1, repel = TRUE)
+p3 = pcaPlot(miPCA, type = 'corr', comp = 1:2, colBy = "contrib", 
+             labels = TRUE, repel = TRUE, col = "hot")
+p4 = pcaPlot(miPCA, type = 'corr', comp = 3:4, colBy = "contrib", 
+             labels = TRUE, repel = TRUE, col = "hot")
+grid.arrange(p1,p2,p3,p4, nrow = 2)
+```
+
+
+
+----------
+
+*EJERCICIO 9*
+
+*Interpreta los clusters obtenidos a partir de los resultados anteriores. ¿Qué variables caracterizan mejor cada cluster de cereales? ¿Qué características comunes tienen los cereales de los distintos clusters?*
+
+----------
+
+
+
+Para complementar o ayudar a la interpretación anterior de los clusters mediante PCA, vamos a realizar un gráfico descriptivo del perfil de cada cluster para observar las diferencias entre ellos. Para ello, calcularemos la media de cada variable para cada cluster.
+
+
+```{r perfiles, fig.width=6, fig.height=4}
+mediasCluster = aggregate(cereals2, by = list("cluster" = misclust), mean)[,-1]
+rownames(mediasCluster) = paste0("c",1:6)
+kable(t(round(mediasCluster,2)))
+matplot(t(mediasCluster), type = "l", col = colores, ylab = "", xlab = "", lwd = 2,
+        lty = 1, main = "Perfil medio de los clusters", xaxt = "n")
+axis(side = 1, at = 1:ncol(cereals2), labels = colnames(cereals2), las = 2)
+legend("topleft", as.character(1:6), col = colores, lwd = 2, ncol = 3, bty = "n")
+```
+
+Vemos, por ejemplo, que los cereales del cluster 2 se caracterizan por un alto contenido en fibra y potasio (o incluso en proteínas), mientras que los del cluster 4 destacan por contenido alto en vitaminas. Los cereales del cluster 3 tendrían un bajo contenido en sodio, los del cluster 6 están más altos en calorías y en grasas y los del cluster 1 tienen muchos azúcares y pocas proteínas.
+
+
+
+Por último, vamos a ver la relación de los clusters con la variable *rating*. Como esta variable es continua, en primer lugar la representaremos mediante un gráfico de cajas y bigotes y también haremos un ANOVA. 
+
+```{r rating, fig.width=6, fig.height=4}
+boxplot(cerePCA$rating ~ misclust, col = colores)
+mianova = aov(cerePCA$rating ~ misclust)
+summary(mianova)
+TukeyHSD(mianova)
+```
+
+Los resultados muestran diferencias significativas en la variable *rating* para cada cluster obtenido. El test de Tukey confirma, como se observa en el gráfico, que los clusters 2 y 3 presentan un rating medio que no es significativamente diferente entre ellos pero sí significativamente mayor que el del resto de clusters. A su vez, el cluster 1 tiene un rating significativamente menor que el resto de clusters.
+
+Por tanto, parece ser que un rating alto está relacionado principalmente con tener pocas calorías, pocas grasas y pocos azúcares.
+
+
+
+
+----------
+
+*EJERCICIO 10*
+
+*Discute las características de los cereales en los clusters con mayor y menor rating en función de todos los resultados generados en este apartado. ¿Coinciden las conclusiones con las que se obtuvieron en la práctica del PCA con respecto a qué variables nutricionales habían contribuido más en la definición del rating?*
+
+----------
+
+
+
+
+# VENTAS AL POR MAYOR
+
+
+## Descripción y exploración de la base de datos 
+
+La base de datos estudiada recoge las ventas al por mayor de diferentes familias de productos (variables) a diferentes clientes (observaciones) en 3 regiones de Portugal. El número de clientes es 440 y se estudian 6 familias de productos. El objetivo es agrupar a los clientes según si tienen los mismos perfiles de compras (es decir, si compran proporciones similares de cada tipo de producto), aunque no compren cantidades similares. Por tanto, para el análisis clustering, solo se tendrán en cuenta las variables relacionadas con los productos y se excluirán las variables **Channel** y **Region**, que se utilizarán más tarde en la interpretación del resultado del clustering.
+
+En este caso, no escalaremos los datos, ya que nos interesa conservar esas "proporciones" de euros gastados en cada familia de productos. 
+
+
+```{r datos2, fig.width=3.5, fig.height=3.5}
+datos = read.csv("archivos de datos/VentasPorMayor.csv")
+auxi = subset(datos, select = c(Channel,Region))
+datos = subset(datos, select = -c(Channel,Region))
+summary(datos)
+```
+
+
+
+
+----------
+
+*EJERCICIO 11*
+
+(a) *Aplica PCA a estos datos, valídalo y excluye los valores anómalos que consideres oportuno.*
+
+(b) *Obtén los clusters de clientes tras excluir los valores anómalos y compáralos con los clusters que obtendremos a continuación.*
+
+----------
+ 
+
+## Medida de distancia y tendencia de agrupamiento
+
+Se utilizará una medida de distancia basada en la correlación de Spearman, ya que nos interesa agrupar clientes con perfiles de gastos similares en cada variable, aunque la cantidad de gasto sea diferente. Utilizaremos la correlación de Spearman porque es más robusta frente a datos extremos. En concreto, la medida de distancia que aplica la función *get_dist* es d=1-r, por lo que estarán cerca los clientes correlacionados positivamente y muy lejos los correlacionados negativamente. 
+
+```{r dist2, fig.height=4, fig.width=4.5}
+midist <- get_dist(datos, stand = FALSE, method = "spearman")
+fviz_dist(midist, show_labels = FALSE,
+          gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
+```
+
+El mapa de color nos muestra que los clientes se agrupan mayoritariamente en tres grandes clusters y parecen observarse unos pocos clientes que presentan comportamientos diferentes al resto.Por tanto, sí que observamos tendencia de agrupamiento.
+
+El estadístico de Hopkins de la función *get_clust_tendency* solo permite utilizar la distancia euclídea, por lo que no podemos aplicarlo en este caso. Es sencillo adaptar la función que hemos utilizado en esta práctica para que admita otras medidas de distancia (*Ejercicio 2*).
+
+
+
+
+## Modelos jerárquicos
+
+En primer lugar, aplicaremos modelos jerárquicos, utilizando el método de Ward y el método de la media (por no extender demasiado la práctica). Empezaremos por estimar el número óptimo de clusters:
+
+```{r koptJER2, fig.width=6, fig.height=3}
+p1 = fviz_nbclust(x = datos, FUNcluster = hcut, method = "silhouette", hc_method = "ward.D2",
+             k.max = 10, verbose = FALSE, diss = midist) +
+  labs(title = "Num. clusters")
+p2 = fviz_nbclust(x = datos, FUNcluster = hcut, method = "wss", hc_method = "ward.D2",
+             k.max = 10, verbose = FALSE, diss = midist) +
+  labs(title = "Num. clusters")
+grid.arrange(p1, p2, nrow = 1)
+```
+
+El coeficiente de Silhouette indica que 2 es el óptimo. Aunque la variabilidad intra-clusters baja en 2, todavía es alta. Sin embargo, aumentar el número de clusters no es recomendable en este caso porque obtendríamos valores negativos de Silhouette. 
+
+Generamos, pues, los 2 clusters. No dibujamos el dendrograma porque tenemos demasiadas observaciones y no se visualizaría bien.
+
+
+```{r ward2, fig.width=6, fig.height=3}
+clust1 <- hclust(midist, method="ward.D2")
+grupos1 <- cutree(clust1, k=2)
+table(grupos1)
+```
+
+
+Estimamos a continuación el número óptimo de clusters para el método de la media.
+
+```{r koptJER2media, fig.width=6, fig.height=3}
+p1 = fviz_nbclust(x = datos, FUNcluster = hcut, method = "silhouette", hc_method = "average",
+             k.max = 10, verbose = FALSE, diss = midist) +
+  labs(title = "Num. clusters")
+p2 = fviz_nbclust(x = datos, FUNcluster = hcut, method = "wss", hc_method = "average",
+             k.max = 10, verbose = FALSE, diss = midist) +
+  labs(title = "Num. clusters")
+grid.arrange(p1, p2, nrow = 1)
+```
+
+Como podemos observar, cualquier número de clusters mayor a uno da lugar a un coeficiente de Silhouette negativo, por lo que descartaremos el método de la media y nos quedaremos con el de Ward.
+
+
+
+
+## Métodos de partición
+
+No podemos aplicar el método de k-medias, ya que se basa en la distancia euclídea. Por tanto, aplicaremos directamente K-medoides. 
+
+
+### K-medoides
+
+Determinamos, en primer lugar, el número de clusters. 
+
+```{r koptPam2, fig.width=6, fig.height=3}
+p1 = fviz_nbclust(x = datos, FUNcluster = pam, method = "silhouette", 
+             k.max = 10, verbose = FALSE, diss = midist) +
+  labs(title = "Numero optimo de clusters")
+p2 = fviz_nbclust(x = datos, FUNcluster = pam, method = "wss", 
+             k.max = 10, verbose = FALSE, diss = midist) +
+  labs(title = "Numero optimo de clusters")
+grid.arrange(p1, p2, nrow = 1)
+```
+
+Aunque Silhouette nos indica que 2 es el óptimo, tomaremos 3 clusters, que es el óptimo siguiente y ya baja mucho la variabilidad intra-cluster.
+
+
+
+```{r pam2, fig.width=3, fig.height=3}
+clust4 <- pam(midist, diss =TRUE, k = 3)
+clustPAM = clust4$clustering
+table(clustPAM)
+```
+
+
+
+## Selección del método de clustering
+
+Para decidir con qué resultados de clustering nos quedamos, utilizaremos el coeficiente de Silhouette.
+
+
+```{r silhouette2, fig.width=9, fig.height=3}
+par(mfrow = c(1,3))
+plot(silhouette(grupos1, midist), col=rainbow(2), border=NA, main = "WARD")
+plot(silhouette(clustPAM, midist), col=rainbow(3), border=NA, main = "K-MEDOIDES")
+```
+
+A la vista de los coeficientes Silhouette, parece que el mejor resultado es para el método de K-medoides ya que el coeficiente global es similar, por cluster se obtienen similares resultados y en K-medoides hay muchas menos observaciones mal clasificadas.
+
+
+----------
+
+*EJERCICIO 12*
+
+*¿Se podría utilizar la librería clValid para calcular otras medidas de calidad de los clusters para los algoritmos aplicados?*
+
+----------
+
+
+
+## Interpretación de los resultados del clustering
+
+Veamos los perfiles medios de cada cluster para caracterizar los clusters obtenidos:
+
+
+```{r perfilesVPM, fig.width=5, fig.height=5}
+perfiles = aggregate(datos, by = list("cluster" = clustPAM), mean)
+kable(perfiles)
+matplot(t(perfiles[,-1]), type = "l", ylab = "medias", lty = 1, lwd = 2, 
+        col = rainbow(3), xlab = "", xaxt = "n")
+axis(side = 1, at = 1:ncol(datos), labels = colnames(datos), las = 2, cex.axis = 0.6)
+legend("topright", as.character(1:3), col = rainbow(3), lwd = 2, bty = "n")
+```
+
+
+El cluster 2 (verde) se caracteriza por consumir una proporción mayor de *Grocery* y *Detergents_Paper* que de *Fresh*. El cluster 3 (azul) tiene un consumo más elevado de *Fresh* y *Frozen* que de *Milk*, *Grocery*, *Detergents_Paper* o *Delicassen*. Por último, el cluster 1 (rojo) presenta un mayor consumo de *Fresh*, *Milk* y *Grocery* que del resto de productos.
+
+
+
+----------
+
+*EJERCICIO 13*
+
+*Estima un modelo ANOVA para cada variable original utilizando los clusters como factor y ordena las variables según su "importancia" en la formación de los clusters a partir del p-valor o del F-ratio del ANOVA. ¿Se obtienen conclusiones similares?*
+
+----------
+
+
+Veamos si las variables *Channel* y *Region* tienen alguna relación con los clusters:
+
+```{r auxi, fig.width=5, fig.height=3}
+prop.table(table(auxi$Channel, clustPAM), margin = 2)
+prop.table(table(auxi$Region, clustPAM), margin = 2)
+```
+
+Parece que el cluster 3 agrupa solamente clientes del canal de venta 1, que también tienen mucha presencia en el cluster 1, mientras que el cluster 2 está más asociado al canal 2. 
+
+No parece haber una relación muy fuerte de los clusters con la región.
+
+
+----------
+
+
+*EJERCICIO 14*
+
+*Aplica el test de independencia para determinar si existe asociación entre los clusters y las variables Channel o Region.*
+
+----------
+
+

@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Rscript -e \"rmarkdown::render\\('PlantillaTrabajoAcademico2 \\(1\\).Rmd', output_format='pdf_document'\\)\")"
+    ]
+  }
+}

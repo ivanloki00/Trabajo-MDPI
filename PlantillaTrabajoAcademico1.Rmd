@@ -332,6 +332,7 @@ for (i in 1:4) {
   )
 }
 ```
+
 En la primera componente, `leptin` está relacionada negativamente con el resto de las variables. En la segunda componente, `mass`, `CRP`, `triceps`, `pedigree`, y `leptin` están relacionadas positivamente entre sí, mientras que están relacionada negativamente con las variables `pregnant`, `age`, `cholesterol`, `pressure`, y `glucose`. La variable `insulin` no tiene influencia en esa componente. La tercera componente recoge las variables `insulin`, `glucose`, y `pedigree` contra el resto de las variables, menos `leptin` que no influye. La cuarta componente tiene como líder `leptin`, junto con `pregnant`, `pressure`, `edad` y `triceps`. `Cholesterol` y `glucose` están relacionados negativamente con las demás, menos `CRP`, `insulin`, `mass` y `pedigree` casi no influyen.
 
 Para ver el porcentaje de variabilidad de cada variable que queda explicado por el modelo PCA (`r round(mipca$explVar[K,"cumPercVar"],1)`), vamos a mirar el gráfico $R^2$.
@@ -342,11 +343,7 @@ pcaPlot(mipca, type = "R2")
 
 Es claro que la mayoría de la componente 4 está explicado por `leptin`, pero `cholesterol` y `pregnant` también son importantes. `Insulin` y `glucose` son quienes más contribuyen en la tercera componente, mientras que en la segunda son `pregnant` y `edad`. Finalmente, la primera componente está bien explicada por muchas variables, lo que tiene sentido porque explica el mayor porcentaje de variabilidad.
 
-Al analizar estos gráficos de las 4 componentes principales retenidas, podemos dar una interpretación clínica a cada una de ellas. 
-La componente 1 explica 27.03% de la variabilidad de los datos, y todos sus loadings menos uno son positivos. Sus variables más contribuyentes captura un factor de obesidad y distribución de grasa en el cuerpo. Valores altos en la PC1 corresponden a pacientes con un peor estado metabólico general, con mayor peso, inflamación, y niveles de glucosa, que son factores importantes de riesgo para la diabetes. Explica 15.71% de la variabilidad total de los datos.
-Las variables de edad y número de embarazos contrastan fuertemente frente a marcadores de obesidad y grasa en la segunda componente. Esta diferencia los pacientes jóvenes sin hijos pero con mayor grado de obesidad y/o inflamación con los pacientes mayores con hijos pero con menor grasa.
-La componente 3 recoge 11.4% de la variabilidad y enfoque en la separación entre los niveles de insulina y glucosa con la historia familial con el riesgo cardiovascular tradicional. Indica la existencia de dos perfiles clínicos distintos entre los pacientes con riesgo biológico.
-Finalmente, la PC4 explica 9.0% de la variabilidad y está dominada casi enteramente por la `leptin`, con una poca contribución de `cholesterol` en la dirección opuesta. Esto sugiere que la variabilidad de la hormona que regula la saciedad tiene una evolución bastante independiente al resto de marcadores de sobrepeso.
+Al analizar estos gráficos de las 4 componentes principales retenidas, podemos dar una interpretación clínica a cada una de ellas. La componente 1 explica 27.03% de la variabilidad de los datos, y todos sus loadings menos uno son positivos. Sus variables más contribuyentes captura un factor de obesidad y distribución de grasa en el cuerpo. Valores altos en la PC1 corresponden a pacientes con un peor estado metabólico general, con mayor peso, inflamación, y niveles de glucosa, que son factores importantes de riesgo para la diabetes. Explica 15.71% de la variabilidad total de los datos. Las variables de edad y número de embarazos contrastan fuertemente frente a marcadores de obesidad y grasa en la segunda componente. Esta diferencia los pacientes jóvenes sin hijos pero con mayor grado de obesidad y/o inflamación con los pacientes mayores con hijos pero con menor grasa. La componente 3 recoge 11.4% de la variabilidad y enfoque en la separación entre los niveles de insulina y glucosa con la historia familial con el riesgo cardiovascular tradicional. Indica la existencia de dos perfiles clínicos distintos entre los pacientes con riesgo biológico. Finalmente, la PC4 explica 9.0% de la variabilidad y está dominada casi enteramente por la `leptin`, con una poca contribución de `cholesterol` en la dirección opuesta. Esto sugiere que la variabilidad de la hormona que regula la saciedad tiene una evolución bastante independiente al resto de marcadores de sobrepeso.
 
 ## Conclusiones
 
@@ -358,7 +355,7 @@ Esta reducción no solo simplifica la complejidad del conjunto de datos, sino qu
 
 # Reglas de asociación
 
-Para complementar el análisis, sería muy bien aplicar reglas de asociación para encontrar patrones y entender el comportamiento de los pacientes, especialmente con respecto a nuestro objetivo de entender por qúe un paciente tiene diabetes o no. Para hacer eso, requiere discretizar las variables númericas para tratarlas como categóricas ordinales. Con esto, podemos trabajar con los distintos niveles y descubrir las reglas de asociación. 
+Para complementar el análisis, sería muy bien aplicar reglas de asociación para encontrar patrones y entender el comportamiento de los pacientes, especialmente con respecto a nuestro objetivo de entender por qúe un paciente tiene diabetes o no. Para hacer eso, requiere discretizar las variables númericas para tratarlas como categóricas ordinales. Con esto, podemos trabajar con los distintos niveles y descubrir las reglas de asociación.
 
 Para discretizar las variables, se ha basado los niveles en umbrales médicos ya establecidos. Esas variables son: `glucose`, `mass`, `age`, y `pressure`. El resto de variables no tienen umbrales establecidos, por lo tanto usamos la función **discretizeDF()** de la librería *arules*. Se dividó esas variables en tres niveles ("Bajo", "Medio", "Alto") por frequencia para tenerlos equilibrados. Como hemos visto antes, la variable `vegdiet` es independiente de si los pacientes tienen diabetes o no, entonces la excluimos también.
 
@@ -409,8 +406,7 @@ datos_reglas$diabetes <- as.factor(datos_reglas$diabetes)
 datos_finales <- datos_reglas[, !(names(datos_reglas) %in% "vegdiet")]
 ```
 
-A continuación aplicamos el algoritmo a priori, con un soporte mínimo de 0.001 y una confianza mínima de 0.8. Además, como nos interesa ver el comportamiento de diabetes, miramos solo las reglas que contiene diabetes en el consecuente.
-Primero, analizamos los factores de riesgo para desarrollar diabetes, incluyendo que el paciente sí tiene diabetes como el consecuente.
+A continuación aplicamos el algoritmo a priori, con un soporte mínimo de 0.001 y una confianza mínima de 0.8. Además, como nos interesa ver el comportamiento de diabetes, miramos solo las reglas que contiene diabetes en el consecuente. Primero, analizamos los factores de riesgo para desarrollar diabetes, incluyendo que el paciente sí tiene diabetes como el consecuente.
 
 ```{r diabetes pos, results='hide'}
 reglasPos <- apriori(datos_finales, 
@@ -420,8 +416,8 @@ reglasPos <- apriori(datos_finales,
 # Eliminamos reglas redundantes
 NoRedundantesPos = reglasPos[!is.redundant(x = reglasPos, measure = "confidence")]
 ```
-Despúes de eliminar las reglas redundantes, hemos obtenido un total de `r length(NoRedundantesPos)` reglas.
-Ordenamos las reglas por su **lift** y miramos las 5 reglas con más lift.
+
+Despúes de eliminar las reglas redundantes, hemos obtenido un total de `r length(NoRedundantesPos)` reglas. Ordenamos las reglas por su **lift** y miramos las 5 reglas con más lift.
 
 ```{r diabetes pos lift}
 reglas_finalesPos <- sort(NoRedundantesPos, by = "lift")
@@ -429,9 +425,10 @@ reglas_finalesPos <- sort(NoRedundantesPos, by = "lift")
 # Mostramos las 10 mejores
 inspect(head(reglas_finalesPos, 5))
 ```
-Las reglas tienen el mismo lift: 3.01626. Esto significa que todos los antecedentes y tener diabetes son dependientes y son reglas útiles. Su interpretación es que teniendo las características del antecedente, es 3 veces más probable tener diabetes que tener diabetes en general. Por ejemplo, en la primera regla dice "si un paciente tiene hipertensión y es adulto (entre 35 y 45 años), es 3 veces más probable tener diabetes que un paciente en general". 
 
-Si el paciente es mayor de 35 años, es probable que tiene diabetes. Como vimos en el PCA, la edad influye mucho. Las otras variables importantes aquí son: `triceps`, `leptin`, `pedigree`, y `insulin`. Estas reglas respaldan el análisis del modelo PCA.  
+Las reglas tienen el mismo lift: 3.01626. Esto significa que todos los antecedentes y tener diabetes son dependientes y son reglas útiles. Su interpretación es que teniendo las características del antecedente, es 3 veces más probable tener diabetes que tener diabetes en general. Por ejemplo, en la primera regla dice "si un paciente tiene hipertensión y es adulto (entre 35 y 45 años), es 3 veces más probable tener diabetes que un paciente en general".
+
+Si el paciente es mayor de 35 años, es probable que tiene diabetes. Como vimos en el PCA, la edad influye mucho. Las otras variables importantes aquí son: `triceps`, `leptin`, `pedigree`, y `insulin`. Estas reglas respaldan el análisis del modelo PCA.
 
 Ahora, para investigar los niveles ideales para no tener diabetes, poniendo el consecuente como no tener diabetes.
 
@@ -450,6 +447,7 @@ reglas_finalesNeg <- sort(NoRedundantesNeg, by = "lift")
 # Mostramos las 10 mejores
 inspect(head(reglas_finalesNeg, 5))
 ```
+
 Podemos ver que hipertensión aparece en esas reglas también, indicando que el hecho de tener hipertensión no significa que el paciente tiene diabetes o no, sino que el médico tiene que mirar las otras características del paciente. Lo mismo con la edad. El resto de las variables están dentro del rango normal, incluso en el nivel bajo, indicando que un médico debe estar alerta si los niveles empiezan a subir para prevenir diabetes antes.
 
 Usando las reglas de asociación, podemos ver las relaciones entre diabetes y marcadores biológicos para crear planes de prevención para pacientes basándose en sus características individuales.

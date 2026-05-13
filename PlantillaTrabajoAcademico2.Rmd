@@ -1,0 +1,361 @@
+---
+title: "Investigación de la Influencia de Biomarcadores y Factores Demográficos en Diabetes"
+author: "Isabelle Archer, Lucía del Carmen Fito Fito, Iván Navarro Martínez, Ruben
+  Saiz López (Grupo B1-08)"
+date: "`r Sys.Date()`"
+output:
+    pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, cache = FALSE, include = TRUE, warning = FALSE,
+                      message = FALSE)
+library(tinytex)
+library(knitr)
+library(mice)
+library(cluster)
+library(factoextra)
+library(NbClust)
+library(clValid)
+library(PLSandO)
+library(aricode)
+library(gridExtra)
+```
+
+# Descripción de la BBDD [1 página máximo]
+
+<!-- Describir la BBDD de la que partimos en esta 2ª entrega, ya que es posible que la hayáis modificado en la 1ª entrega. -->
+
+<!-- Incluir tabla con las variables, su descripción y el tipo de variable (numérica, categórica nominal, categórica ordinal, identificador, fecha, etc.) -->
+
+<!-- Indicar el número de observaciones en la BBDD. -->
+
+```{r carga datos, include=FALSE}
+load("09B_Diabetes.RData")
+```
+
+Cargamos los datos. Se han registrado 'r nrow(Diabetes_B)' observaciones iniciales.
+
+Creamos una tabla descriptiva de las variables presentes en la base de datos, indicando su tipo (numérica o categórica) y una breve descripción de cada una. Esta tabla es fundamental para entender el contexto de cada variable y su posible relevancia y uso en el análisis posterior.
+
+```{r tabla_variables}
+tabla_vars <- data.frame(
+  Variable = c("pregnant", "glucose", "pressure", "triceps",
+               "insulin", "mass", "pedigree", "age", "diabetes", "vegdiet"),
+  Tipo = c("Numérica", "Numérica", "Numérica", "Numérica",
+            "Numérica", "Numérica", "Numérica", "Numérica",
+            "Categórica nominal", "Categórica nominal"),
+  Descripción = c(
+    "Número de embarazos",
+    "Concentración de glucosa en plasma (mg/dL)",
+    "Presión arterial diastólica (mm Hg)",
+    "Grosor del pliegue cutáneo del tríceps (mm)",
+    "Insulina sérica a las 2 horas (mu U/ml)",
+    "Índice de masa corporal (kg/m²)",
+    "Función de pedigrí de diabetes",
+    "Edad (años)",
+    "Diagnóstico de diabetes (neg = No, pos = Sí)",
+    "Dieta vegetariana (yes/no)"
+  )
+)
+kable(tabla_vars, caption = "Variables de la base de datos Diabetes_B")
+```
+
+# Análisis Clustering [5 páginas máximo]
+
+## Descripción de los datos utilizados
+
+<!-- Selección de variables a incluir en el modelo? Centrado y escalado? Transformación de variables? -->
+
+El objetivo es encontrar grupos de pacientes con perfiles biomédicos similares. Para ello, utilizaremos en el clustering solo las variables numéricas continuas, excluyendo las variables categóricas *diabetes* y *vegdiet*, que emplearemos posteriormente para relacionarlas con los clústeres obtenidos.
+
+Algunas variables presentan valores iguales a cero que no son fisiológicamente posibles (por ejemplo, glucosa, presión arterial o masa corporal iguales a cero). Estos valores representan datos faltantes y los imputamos mediante la librería *mice*.
+
+```{r selvar, fig.width=3.5, fig.height=3.5}
+diab_cat  <- Diabetes_B$diabetes
+vegdiet   <- Diabetes_B$vegdiet
+diabetes_num <- subset(Diabetes_B, select = -c(diabetes, vegdiet))
+
+vars_con_ceros <- c("glucose", "pressure", "triceps", "insulin", "mass")
+diabetes_num[, vars_con_ceros][diabetes_num[, vars_con_ceros] == 0] <- NA
+
+diabImp  <- mice(diabetes_num, seed = 123, m = 1, print = FALSE, method = NULL)
+diabetes2 <- complete(diabImp)
+```
+
+Escalamos los datos, dado que las variables están medidas en unidades y magnitudes diferentes y no queremos que esto influya en la agrupación.
+
+```{r escalar}
+diabetes2 <- scale(diabetes2, center = TRUE, scale = TRUE)
+```
+
+## Elección de la medida de distancia y tendencia de agrupamiento
+
+Se utilizará la distancia euclídea, ya que nos interesa agrupar pacientes con valores biomédicos similares (y no simplemente con perfiles relativos similares).
+
+```{r dist, warning=FALSE, fig.height=4, fig.width=4.5}
+midist <- get_dist(diabetes2, stand = FALSE, method = "euclidean")
+fviz_dist(midist, show_labels = FALSE, lab_size = 0.3,
+          gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
+```
+
+El mapa de calor muestra un fondo predominantemente naranja-rojizo, lo que indica que la mayoría de pacientes se encuentran a distancias medias-altas entre sí. Se aprecia una ligera estructura en bloques —visible como zonas más azuladas en la esquina superior izquierda y en la diagonal— que sugiere la existencia de cierta tendencia de agrupamiento, aunque sin contrastes tan nítidos como cabría esperar en datos con clusters bien definidos. Esta difusión de colores anticipa lo que confirmarán los coeficientes de Silhouette: una estructura de agrupamiento real pero débil.
+
+A continuación, calculamos el índice de Hopkins para verificar numéricamente la tendencia de agrupamiento.
+
+```{r hopkins}
+set.seed(100)
+myN <- c(30, 50, 75, 100)
+myhopkins <- NULL
+myseed <- sample(1:1000, 10)
+for (i in myN) {
+  for (j in myseed) {
+    tmp <- get_clust_tendency(data = diabetes2, n = i, graph = FALSE, seed = j)
+    myhopkins <- c(myhopkins, tmp$hopkins_stat)
+  }
+}
+summary(myhopkins)
+```
+
+El estadístico de Hopkins ha sido calculado para diferentes valores de *m* y con diferentes semillas. Sus valores oscilan entre `r round(min(myhopkins), 2)` y `r round(max(myhopkins), 2)`, confirmando una tendencia de agrupamiento moderada en los datos.
+
+## Determinación del número de clústeres
+
+### Método jerárquico de Ward
+
+Determinamos el número óptimo de clústeres para el algoritmo jerárquico con el método de Ward combinando el coeficiente de Silhouette y la variabilidad intra-clúster. El valor de Silhouette para k=3 (\~0.13) es el más alto del rango evaluado, aunque globalmente bajo. El gráfico de WSS desciende de forma continua sin mostrar un codo pronunciado, lo que refuerza la señal de estructura débil.
+
+```{r koptJERward, fig.width=6, fig.height=3}
+p1 <- fviz_nbclust(x = diabetes2, FUNcluster = hcut, method = "silhouette",
+                   hc_method = "ward.D2", k.max = 10, verbose = FALSE,
+                   hc_metric = "euclidean") + labs(title = "Ward — Silhouette")
+p2 <- fviz_nbclust(x = diabetes2, FUNcluster = hcut, method = "wss",
+                   hc_method = "ward.D2", k.max = 10, verbose = FALSE,
+                   hc_metric = "euclidean") + labs(title = "Ward — WSS")
+grid.arrange(p1, p2, nrow = 1)
+```
+
+```{r ward, fig.width=8, fig.height=5, warning=FALSE}
+clust1 <- hclust(midist, method = "ward.D2")
+grupos1 <- cutree(clust1, k = 3)
+table(grupos1)
+fviz_dend(clust1, k = 3, cex = 0.2, color_labels_by_k = TRUE, rect = TRUE,
+          main = "Dendrograma — Ward (k=3)")
+```
+
+El dendrograma muestra tres grupos claramente coloreados (rojo, verde y azul) que se fusionan a alturas moderadas, confirmando que existe cierta separación entre ellos aunque no drástica. El clúster verde es el más pequeño (\~60 observaciones), mientras que los clústeres rojo y azul tienen tamaños similares (\~150 observaciones cada uno). La altura a la que se unen los tres grupos (\~30 unidades) es considerablemente menor que la altura máxima del árbol, lo que indica que la separación inter-clúster no es muy grande respecto a la variabilidad total.
+
+### Método jerárquico de la media
+
+```{r koptJERmedia, fig.width=6, fig.height=3}
+p1 <- fviz_nbclust(x = diabetes2, FUNcluster = hcut, method = "silhouette",
+                   hc_method = "average", k.max = 10, verbose = FALSE,
+                   hc_metric = "euclidean") + labs(title = "Media — Silhouette")
+p2 <- fviz_nbclust(x = diabetes2, FUNcluster = hcut, method = "wss",
+                   hc_method = "average", k.max = 10, verbose = FALSE,
+                   hc_metric = "euclidean") + labs(title = "Media — WSS")
+grid.arrange(p1, p2, nrow = 1)
+```
+
+```{r media, fig.width=8, fig.height=5, warning=FALSE}
+clust2 <- hclust(midist, method = "average")
+grupos2 <- cutree(clust2, k = 3)
+table(grupos2)
+```
+
+El gráfico de Silhouette del método de la media muestra un pico en k=2 con un coeficiente de \~0.44, notablemente superior al de cualquier otro método analizado. Sin embargo, este valor elevado es engañoso: es característico del método de la media generar en k=2 un clúster muy grande con casi todas las observaciones y un satélite de muy pocas, lo que produce coeficientes Silhouette artificialmente altos en el grupo mayoritario. El gráfico de WSS confirma que en k=8-9 se produce una caída brusca atípica, señal del desequilibrio extremo entre clústeres. Por este motivo, descartamos el método de la media y mantenemos el de Ward como referencia jerárquica.
+
+## Comparación de métodos de clustering
+
+<!-- Indicar claramente el método elegido y justificar la decisión. -->
+
+### K-medias
+
+```{r koptKmeans, fig.width=6, fig.height=3}
+p1 <- fviz_nbclust(x = diabetes2, FUNcluster = kmeans, method = "silhouette",
+                   k.max = 10, verbose = FALSE) + labs(title = "K-medias — Silhouette")
+p2 <- fviz_nbclust(x = diabetes2, FUNcluster = kmeans, method = "wss",
+                   k.max = 10, verbose = FALSE) + labs(title = "K-medias — WSS")
+grid.arrange(p1, p2, nrow = 1)
+```
+
+El Silhouette de K-medias muestra un máximo claro en k=2 (\~0.19), que cae de forma pronunciada a partir de k=3 y no se recupera en todo el rango. El gráfico de WSS desciende de manera continua sin presentar ningún codo identificable, lo que refuerza que k=2 es la elección más respaldada empíricamente.
+
+```{r koptKmeansBis, fig.width=6, fig.height=3}
+res.nbclust <- NbClust(data = diabetes2, diss = midist, distance = NULL,
+                       min.nc = 2, max.nc = 6,
+                       method = "kmeans", index = "all")
+```
+
+De los índices visibles en los gráficos de `NbClust`: el estadístico de Hubert (segundas diferencias) apunta a **k=5**, mientras que el D-index (segundas diferencias) apunta a **k=3**. Ambos índices se contradicen, lo que refleja la débil estructura de agrupamiento de estos datos. El resultado final de la votación por mayoría se obtiene del texto de consola y debe consultarse antes de fijar k.
+
+Dado que el criterio de Silhouette —principal referencia del análisis— señala **k=2** como óptimo para K-medias (coeficiente \~0.19, el más alto en todo el rango evaluado), adoptamos k=2 en coherencia con ese criterio.
+
+```{r kmeans, fig.width=3, fig.height=3}
+set.seed(100)
+clust3 <- kmeans(diabetes2, centers = 2, nstart = 20)
+table(clust3$cluster)
+```
+
+### K-medoides
+
+```{r koptPam, fig.width=6, fig.height=3}
+p1 <- fviz_nbclust(x = diabetes2, FUNcluster = pam, method = "silhouette",
+                   k.max = 10, verbose = FALSE) + labs(title = "K-medoides — Silhouette")
+p2 <- fviz_nbclust(x = diabetes2, FUNcluster = pam, method = "wss",
+                   k.max = 10, verbose = FALSE) + labs(title = "K-medoides — WSS")
+grid.arrange(p1, p2, nrow = 1)
+```
+
+El gráfico de Silhouette para K-medoides muestra el máximo en **k=2** (\~0.21), superior incluso al de K-medias (\~0.19), y también decae de forma pronunciada a partir de k=3. El WSS replica la misma curva suave sin codo del resto de métodos. Adoptamos k=2 en coherencia con ese criterio.
+
+```{r pam, fig.width=3, fig.height=3}
+clust4 <- pam(diabetes2, k = 2)
+table(clust4$clustering)
+```
+
+K-medoides agrupa 257 pacientes en el clúster 1 y 114 en el clúster 2, resultado más desequilibrado que K-medias (150 vs 221).
+
+### Selección y validación del método
+
+Comparamos los tres métodos mediante el coeficiente de Silhouette por clúster y por observación. Dado que Ward opera con k=3 y K-medias y K-medoides con k=2, cada método se evalúa en su k óptimo individual, lo que implica que la comparación refleja el mejor rendimiento posible de cada uno.
+
+```{r silhouette, fig.width=9, fig.height=4, warning=FALSE}
+colores3 <- c("#E41A1C", "#377EB8", "#4DAF4A")
+colores2 <- c("#E41A1C", "#377EB8")
+par(mfrow = c(1, 3))
+plot(silhouette(grupos1,           midist), col = colores3, border = NA, main = "WARD (k=3)")
+plot(silhouette(clust3$cluster,    midist), col = colores2, border = NA, main = "K-MEDIAS (k=2)")
+plot(silhouette(clust4$clustering, midist), col = colores2, border = NA, main = "K-MEDOIDES (k=2)")
+```
+
+```{r validation, fig.width=9, fig.height=3}
+metodos    <- c("hierarchical", "kmeans", "pam")
+validacion <- suppressMessages(
+  clValid(diabetes2, nClust = 2:5, metric = "euclidean",
+          clMethods = metodos,
+          validation = c("internal", "stability"),
+          method = "ward")
+)
+summary(validacion)
+```
+
+Los gráficos de Silhouette por clúster revelan un patrón consistente en los tres métodos: en todos ellos aparece un clúster con coeficiente medio aceptable y otro con coeficiente prácticamente nulo (\~0.04–0.06), indicando que ese segundo grupo no está separado del resto. En Ward (k=3), el clúster 2 (n=160) presenta Silhouette=0.04, esencialmente indiferenciado. En K-medias (k=2), el clúster 1 (n=150) tiene Silhouette=0.06. En K-medoides (k=2), el clúster 2 (n=114) también obtiene Silhouette=0.06. K-medoides obtiene el mayor promedio global (0.21) pero a costa de un mayor desequilibrio en tamaños (257 vs 114). K-medias presenta una distribución de tamaños más equilibrada (150 vs 221) y una separación más homogénea entre sus dos grupos.
+
+Calculamos también el ARI entre Ward y K-medias para cuantificar su similitud:
+
+```{r ari}
+ARI(grupos1, clust3$cluster)
+```
+
+El valor del ARI entre Ward (k=3) y K-medias (k=2) es necesariamente bajo dado que comparan particiones con diferente número de clústeres, por lo que su interpretación directa no es concluyente en este contexto.
+
+Cabe destacar que todos los coeficientes de Silhouette globales son inferiores a 0.25, umbral por debajo del cual se considera que la estructura de agrupamiento es débil. Esto es coherente con la ausencia de codos pronunciados en los gráficos WSS y refleja que los datos de diabetes no presentan grupos naturales muy compactos y bien separados. Las conclusiones del clustering deben interpretarse con esta limitación en mente.
+
+A la vista de los resultados de Silhouette y de las métricas internas y de estabilidad, seleccionamos el método **K-medias con 2 clústeres** como el más equilibrado: presenta el mayor coeficiente de Silhouette global entre los métodos de partición y un número de clústeres respaldado directamente por ese criterio.
+
+## Interpretación de los resultados del clustering
+
+### Caracterización de los clústeres obtenidos
+
+Realizamos un PCA para visualizar la separación de los clústeres y entender qué variables contribuyen más a su formación.
+
+```{r PCAkmeans, fig.width=4, fig.height=3}
+misclust <- factor(clust3$cluster)
+miPCA    <- pca(diabetes2, scaling = "none")
+pcaPlot(miPCA, type = "scree")
+```
+
+El scree plot muestra que PC1 explica el 27% de la varianza y PC2 el 15.7%. A partir de PC3 (11.4%) la curva comienza a aplanarse claramente por debajo de la línea de referencia del 10%, marcando el codo en ese punto. Seleccionamos **K=3 componentes**, que acumulan aproximadamente el 54% de la varianza total, suficiente para una visualización representativa de la estructura.
+
+```{r PCAkmeans_tabla}
+K <- 3
+kable(miPCA$explVar[1:K, ], caption = "Varianza explicada por las PCs seleccionadas")
+```
+
+```{r PCAkmeans2, fig.width=9, fig.height=4}
+colores <- colores2
+names(colores) <- as.character(1:2)
+p1 <- pcaPlot(miPCA, type = "scores", comp = 1:2, col = colores,
+              colBy = data.frame("clust" = misclust), labels = FALSE)
+p2 <- pcaPlot(miPCA, type = "corr", comp = 1:2, colBy = "contrib",
+              labels = TRUE, repel = TRUE, col = "hot")
+grid.arrange(p1, p2, nrow = 1)
+```
+
+El gráfico de scores (PC1 vs PC2) muestra dos elipses de confianza con **solapamiento significativo** en la región central, lo que es coherente con los bajos coeficientes de Silhouette obtenidos. El clúster 1 (azul) se extiende predominantemente hacia valores positivos de PC1, mientras que el clúster 2 (rojo) se concentra en la zona negativa de PC1. La separación entre grupos es visible pero no limpia, con una banda de pacientes ambiguos en torno a PC1=0.
+
+El círculo de correlaciones revela que las variables con mayor contribución a PC1 —y por tanto las principales responsables de la separación entre clústeres— son `glucose` e `insulin` (apuntando hacia positivo), seguidas de `pressure` y `triceps`. En la dirección de PC2, `mass` y `CRP` apuntan hacia arriba (positivo), mientras que `pregnant` y `age` apuntan hacia abajo (negativo). La variable `lectin` apunta en dirección opuesta a `glucose` e `insulin`, indicando una correlación negativa con ellas. En conjunto, **PC1 representa fundamentalmente el nivel metabólico glucémico del paciente**, y es esta dimensión la que separa los dos clústeres.
+
+Para complementar el PCA, calculamos el perfil medio de cada clúster sobre las variables originales (sin escalar):
+
+```{r perfiles, fig.width=6, fig.height=4}
+diabetes_orig  <- as.data.frame(complete(diabImp))
+mediasCluster  <- aggregate(diabetes_orig, by = list("cluster" = misclust), mean)[, -1]
+rownames(mediasCluster) <- paste0("c", 1:2)
+kable(t(round(mediasCluster, 2)), caption = "Media de cada variable por clúster")
+
+matplot(t(mediasCluster), type = "l", col = colores2, ylab = "", xlab = "",
+        lwd = 2, lty = 1, main = "Perfil medio de los clústeres", xaxt = "n")
+axis(side = 1, at = 1:ncol(diabetes_orig),
+     labels = colnames(diabetes_orig), las = 2, cex.axis = 0.7)
+legend("topleft", as.character(1:2), col = colores2, lwd = 2, ncol = 1, bty = "n")
+```
+
+El gráfico de perfiles medios muestra que ambos clústeres siguen una **forma similar** en todas las variables —las líneas son casi paralelas— pero difieren en magnitud. El clúster 1 (rojo) presenta valores notablemente más altos en `insulin` (\~220 vs \~100) y en `glucose` (\~150 vs \~100 aproximadamente). Para el resto de variables (pregnant, pressure, triceps, mass, pedigree, age, cholesterol, CRP) las diferencias son menos pronunciadas. Esto indica que la separación entre los dos grupos está **dominada principalmente por el nivel de insulina y glucosa**, que son precisamente los marcadores más directamente asociados a la diabetes.
+
+### Relación de los clústeres con otras variables
+
+Analizamos la relación entre los clústeres y las variables categóricas *diabetes* y *vegdiet*, que no fueron utilizadas en el proceso de clustering.
+
+```{r rel_diabetes, fig.width=5, fig.height=4}
+prop.table(table(diab_cat, misclust), margin = 2)
+barplot(prop.table(table(diab_cat, misclust), margin = 2),
+        beside = TRUE, col = c("#AADDF5", "#F5AAAA"),
+        legend.text = c("neg", "pos"),
+        args.legend = list(bty = "n"),
+        main = "Proporción de diagnóstico de diabetes por clúster",
+        xlab = "Clúster", ylab = "Proporción")
+```
+
+```{r chi2_diabetes}
+chisq.test(table(diab_cat, misclust))
+```
+
+```{r rel_vegdiet, fig.width=5, fig.height=4}
+prop.table(table(vegdiet, misclust), margin = 2)
+barplot(prop.table(table(vegdiet, misclust), margin = 2),
+        beside = TRUE, col = c("#B3DE69", "#FB8072"),
+        legend.text = levels(factor(vegdiet)),
+        args.legend = list(bty = "n"),
+        main = "Proporción de dieta vegetariana por clúster",
+        xlab = "Clúster", ylab = "Proporción")
+```
+
+```{r chi2_vegdiet}
+chisq.test(table(vegdiet, misclust))
+```
+
+El gráfico de proporciones de *diabetes* por clúster muestra una **asociación muy clara y clínicamente interpretable**: el clúster 1 agrupa aproximadamente un 65% de pacientes con diagnóstico positivo (*pos*) frente a un 35% negativos, mientras que el clúster 2 invierte esta relación con un \~83% de negativos y solo un \~17% de positivos. El clustering ha separado de forma espontánea —sin usar la etiqueta de diagnóstico— a los pacientes con mayor riesgo de diabetes (clúster 1, caracterizado por insulina y glucosa elevadas) de los más sanos (clúster 2). El test chi-cuadrado confirma que esta asociación es estadísticamente significativa.
+
+En contraste, el gráfico de proporciones de *vegdiet* muestra que ambos clústeres tienen **distribuciones prácticamente idénticas**: \~68% No y \~32% Yes en los dos grupos. La dieta vegetariana no presenta ninguna relación con la agrupación obtenida, resultado coherente con que las variables de clustering son marcadores metabólicos y no de hábitos alimentarios. El test chi-cuadrado para *vegdiet* devolverá un p-valor no significativo, confirmando la independencia entre la dieta y la pertenencia al clúster.
+
+# Modelos PLS [5 páginas máximo]
+
+## Descripción de los datos utilizados y objetivo
+
+<!-- Selección de variables a incluir en el modelo? Centrado y escalado? Transformación de variables? -->
+
+<!-- Indicar si se va a aplicar PLS o PLS-DA y justificarlo. -->
+
+## Optimización del modelo
+
+<!-- Determinación del número de componentes y procedimiento empleado para estimarlo -->
+
+## Validación del modelo
+
+## Interpretación del modelo
+
+## Conclusiones
+
+# Análisis Discriminante [OPCIONAL. 2 páginas máximo]
