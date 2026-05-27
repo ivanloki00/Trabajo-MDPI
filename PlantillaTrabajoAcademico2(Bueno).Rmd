@@ -1,0 +1,559 @@
+---
+title: "Investigación de la Influencia de Biomarcadores y Factores Demográficos en Diabetes"
+author: "Isabelle Archer, Lucía del Carmen Fito Fito, Iván Navarro Martínez, Ruben
+  Saiz López (Grupo B1-08)"
+date: "`r Sys.Date()`"
+output:
+    pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, cache = FALSE, include = TRUE, warning = FALSE,
+                      message = FALSE)
+library(tinytex)
+library(knitr)
+library(mice)
+library(cluster)
+library(factoextra)
+library(NbClust)
+library(clValid)
+library(PLSandO)
+library(aricode)
+library(gridExtra)
+library(caret)
+library(MASS) # Para el análisis discriminante
+```
+
+# Descripción de la BBDD [1 página máximo]
+
+<!-- Describir la BBDD de la que partimos en esta 2ª entrega, ya que es posible que la hayáis modificado en la 1ª entrega. -->
+
+<!-- Incluir tabla con las variables, su descripción y el tipo de variable (numérica, categórica nominal, categórica ordinal, identificador, fecha, etc.) -->
+
+<!-- Indicar el número de observaciones en la BBDD. -->
+
+```{r carga datos, include=FALSE}
+load("09B_Diabetes.RData")
+```
+
+Cargamos los datos. Se han registrado 'r nrow(Diabetes_B)' observaciones iniciales.
+
+Creamos una tabla descriptiva de las variables presentes en la base de datos, indicando su tipo (numérica o categórica) y una breve descripción de cada una. Esta tabla es fundamental para entender el contexto de cada variable y su posible relevancia y uso en el análisis posterior.
+
+```{r tabla_variables}
+tabla_vars <- data.frame(
+  Variable = c("pregnant", "glucose", "pressure", "triceps",
+               "insulin", "mass", "pedigree", "age", "diabetes", "vegdiet"),
+  Tipo = c("Numérica", "Numérica", "Numérica", "Numérica",
+            "Numérica", "Numérica", "Numérica", "Numérica",
+            "Categórica nominal", "Categórica nominal"),
+  Descripción = c(
+    "Número de embarazos",
+    "Concentración de glucosa en plasma (mg/dL)",
+    "Presión arterial diastólica (mm Hg)",
+    "Grosor del pliegue cutáneo del tríceps (mm)",
+    "Insulina sérica a las 2 horas (mu U/ml)",
+    "Índice de masa corporal (kg/m²)",
+    "Función de pedigrí de diabetes",
+    "Edad (años)",
+    "Diagnóstico de diabetes (neg = No, pos = Sí)",
+    "Dieta vegetariana (yes/no)"
+  )
+)
+kable(tabla_vars, caption = "Variables de la base de datos Diabetes_B")
+```
+
+# Análisis Clustering [5 páginas máximo]
+
+## Descripción de los datos utilizados
+
+<!-- Selección de variables a incluir en el modelo? Centrado y escalado? Transformación de variables? -->
+
+El objetivo es encontrar grupos de pacientes con perfiles biomédicos similares. Para ello, utilizaremos en el clustering solo las variables numéricas continuas, excluyendo las variables categóricas *diabetes* y *vegdiet*, que emplearemos posteriormente para relacionarlas con los clústeres obtenidos.
+
+Algunas variables presentan valores iguales a cero que no son fisiológicamente posibles (por ejemplo, glucosa, presión arterial o masa corporal iguales a cero). Estos valores representan datos faltantes y los imputamos mediante la librería *mice*.
+
+```{r selvar, fig.width=3.5, fig.height=3.5}
+diab_cat  <- Diabetes_B$diabetes
+vegdiet   <- Diabetes_B$vegdiet
+diabetes_num <- subset(Diabetes_B, select = -c(diabetes, vegdiet))
+
+vars_con_ceros <- c("glucose", "pressure", "triceps", "insulin", "mass")
+diabetes_num[, vars_con_ceros][diabetes_num[, vars_con_ceros] == 0] <- NA
+
+diabImp  <- mice(diabetes_num, seed = 123, m = 1, print = FALSE, method = NULL)
+diabetes2 <- complete(diabImp)
+```
+
+Escalamos los datos, dado que las variables están medidas en unidades y magnitudes diferentes y no queremos que esto influya en la agrupación.
+
+```{r escalar}
+diabetes2 <- scale(diabetes2, center = TRUE, scale = TRUE)
+```
+
+## Elección de la medida de distancia y tendencia de agrupamiento
+
+Se utilizará la distancia euclídea, ya que nos interesa agrupar pacientes con valores biomédicos similares (y no simplemente con perfiles relativos similares).
+
+```{r dist, warning=FALSE, fig.height=4, fig.width=4.5}
+midist <- get_dist(diabetes2, stand = FALSE, method = "euclidean")
+fviz_dist(midist, show_labels = FALSE, lab_size = 0.3,
+          gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
+```
+
+El mapa de calor muestra un fondo predominantemente naranja-rojizo, lo que indica que la mayoría de pacientes se encuentran a distancias medias-altas entre sí. Se aprecia una ligera estructura en bloques —visible como zonas más azuladas en la esquina superior izquierda y en la diagonal— que sugiere la existencia de cierta tendencia de agrupamiento, aunque sin contrastes tan nítidos como cabría esperar en datos con clusters bien definidos. Esta difusión de colores anticipa lo que confirmarán los coeficientes de Silhouette: una estructura de agrupamiento real pero débil.
+
+A continuación, calculamos el índice de Hopkins para verificar numéricamente la tendencia de agrupamiento.
+
+```{r hopkins}
+set.seed(100)
+myN <- c(30, 50, 75, 100)
+myhopkins <- NULL
+myseed <- sample(1:1000, 10)
+for (i in myN) {
+  for (j in myseed) {
+    tmp <- get_clust_tendency(data = diabetes2, n = i, graph = FALSE, seed = j)
+    myhopkins <- c(myhopkins, tmp$hopkins_stat)
+  }
+}
+summary(myhopkins)
+```
+
+El estadístico de Hopkins ha sido calculado para diferentes valores de *m* y con diferentes semillas. Sus valores oscilan entre `r round(min(myhopkins), 2)` y `r round(max(myhopkins), 2)`, confirmando una tendencia de agrupamiento moderada en los datos.
+
+## Determinación del número de clústeres
+
+### Método jerárquico de Ward
+
+Determinamos el número óptimo de clústeres para el algoritmo jerárquico con el método de Ward combinando el coeficiente de Silhouette y la variabilidad intra-clúster. El valor de Silhouette para k=3 (\~0.13) es el más alto del rango evaluado, aunque globalmente bajo. El gráfico de WSS desciende de forma continua sin mostrar un codo pronunciado, lo que refuerza la señal de estructura débil.
+
+```{r koptJERward, fig.width=6, fig.height=3}
+p1 <- fviz_nbclust(x = diabetes2, FUNcluster = hcut, method = "silhouette",
+                   hc_method = "ward.D2", k.max = 10, verbose = FALSE,
+                   hc_metric = "euclidean") + labs(title = "Ward — Silhouette")
+p2 <- fviz_nbclust(x = diabetes2, FUNcluster = hcut, method = "wss",
+                   hc_method = "ward.D2", k.max = 10, verbose = FALSE,
+                   hc_metric = "euclidean") + labs(title = "Ward — WSS")
+grid.arrange(p1, p2, nrow = 1)
+```
+
+```{r ward, fig.width=8, fig.height=5, warning=FALSE}
+clust1 <- hclust(midist, method = "ward.D2")
+grupos1 <- cutree(clust1, k = 3)
+table(grupos1)
+fviz_dend(clust1, k = 3, cex = 0.2, color_labels_by_k = TRUE, rect = TRUE,
+          main = "Dendrograma — Ward (k=3)")
+```
+
+El dendrograma muestra tres grupos claramente coloreados (rojo, verde y azul) que se fusionan a alturas moderadas, confirmando que existe cierta separación entre ellos aunque no drástica. El clúster verde es el más pequeño (\~60 observaciones), mientras que los clústeres rojo y azul tienen tamaños similares (\~150 observaciones cada uno). La altura a la que se unen los tres grupos (\~30 unidades) es considerablemente menor que la altura máxima del árbol, lo que indica que la separación inter-clúster no es muy grande respecto a la variabilidad total.
+
+### Método jerárquico de la media
+
+```{r koptJERmedia, fig.width=6, fig.height=3}
+p1 <- fviz_nbclust(x = diabetes2, FUNcluster = hcut, method = "silhouette",
+                   hc_method = "average", k.max = 10, verbose = FALSE,
+                   hc_metric = "euclidean") + labs(title = "Media — Silhouette")
+p2 <- fviz_nbclust(x = diabetes2, FUNcluster = hcut, method = "wss",
+                   hc_method = "average", k.max = 10, verbose = FALSE,
+                   hc_metric = "euclidean") + labs(title = "Media — WSS")
+grid.arrange(p1, p2, nrow = 1)
+```
+
+```{r media, fig.width=8, fig.height=5, warning=FALSE}
+clust2 <- hclust(midist, method = "average")
+grupos2 <- cutree(clust2, k = 3)
+table(grupos2)
+```
+
+El gráfico de Silhouette del método de la media muestra un pico en k=2 con un coeficiente de \~0.44, notablemente superior al de cualquier otro método analizado. Sin embargo, este valor elevado es engañoso: es característico del método de la media generar en k=2 un clúster muy grande con casi todas las observaciones y un satélite de muy pocas, lo que produce coeficientes Silhouette artificialmente altos en el grupo mayoritario. El gráfico de WSS confirma que en k=8-9 se produce una caída brusca atípica, señal del desequilibrio extremo entre clústeres. Por este motivo, descartamos el método de la media y mantenemos el de Ward como referencia jerárquica.
+
+## Comparación de métodos de clustering
+
+<!-- Indicar claramente el método elegido y justificar la decisión. -->
+
+### K-medias
+
+```{r koptKmeans, fig.width=6, fig.height=3}
+p1 <- fviz_nbclust(x = diabetes2, FUNcluster = kmeans, method = "silhouette",
+                   k.max = 10, verbose = FALSE) + labs(title = "K-medias — Silhouette")
+p2 <- fviz_nbclust(x = diabetes2, FUNcluster = kmeans, method = "wss",
+                   k.max = 10, verbose = FALSE) + labs(title = "K-medias — WSS")
+grid.arrange(p1, p2, nrow = 1)
+```
+
+El Silhouette de K-medias muestra un máximo claro en k=2 (\~0.19), que cae de forma pronunciada a partir de k=3 y no se recupera en todo el rango. El gráfico de WSS desciende de manera continua sin presentar ningún codo identificable, lo que refuerza que k=2 es la elección más respaldada empíricamente.
+
+```{r koptKmeansBis, fig.width=6, fig.height=3}
+res.nbclust <- NbClust(data = diabetes2, diss = midist, distance = NULL,
+                       min.nc = 2, max.nc = 6,
+                       method = "kmeans", index = "all")
+```
+
+De los índices visibles en los gráficos de `NbClust`: el estadístico de Hubert (segundas diferencias) apunta a **k=5**, mientras que el D-index (segundas diferencias) apunta a **k=3**. Ambos índices se contradicen, lo que refleja la débil estructura de agrupamiento de estos datos. El resultado final de la votación por mayoría se obtiene del texto de consola y debe consultarse antes de fijar k.
+
+Dado que el criterio de Silhouette —principal referencia del análisis— señala **k=2** como óptimo para K-medias (coeficiente \~0.19, el más alto en todo el rango evaluado), adoptamos k=2 en coherencia con ese criterio.
+
+```{r kmeans, fig.width=3, fig.height=3}
+set.seed(100)
+clust3 <- kmeans(diabetes2, centers = 2, nstart = 20)
+table(clust3$cluster)
+```
+
+### K-medoides
+
+```{r koptPam, fig.width=6, fig.height=3}
+p1 <- fviz_nbclust(x = diabetes2, FUNcluster = pam, method = "silhouette",
+                   k.max = 10, verbose = FALSE) + labs(title = "K-medoides — Silhouette")
+p2 <- fviz_nbclust(x = diabetes2, FUNcluster = pam, method = "wss",
+                   k.max = 10, verbose = FALSE) + labs(title = "K-medoides — WSS")
+grid.arrange(p1, p2, nrow = 1)
+```
+
+El gráfico de Silhouette para K-medoides muestra el máximo en **k=2** (\~0.21), superior incluso al de K-medias (\~0.19), y también decae de forma pronunciada a partir de k=3. El WSS replica la misma curva suave sin codo del resto de métodos. Adoptamos k=2 en coherencia con ese criterio.
+
+```{r pam, fig.width=3, fig.height=3}
+clust4 <- pam(diabetes2, k = 2)
+table(clust4$clustering)
+```
+
+K-medoides agrupa 257 pacientes en el clúster 1 y 114 en el clúster 2, resultado más desequilibrado que K-medias (150 vs 221).
+
+### Selección y validación del método
+
+Comparamos los tres métodos mediante el coeficiente de Silhouette por clúster y por observación. Dado que Ward opera con k=3 y K-medias y K-medoides con k=2, cada método se evalúa en su k óptimo individual, lo que implica que la comparación refleja el mejor rendimiento posible de cada uno.
+
+```{r silhouette, fig.width=9, fig.height=4, warning=FALSE}
+colores3 <- c("#E41A1C", "#377EB8", "#4DAF4A")
+colores2 <- c("#E41A1C", "#377EB8")
+par(mfrow = c(1, 3))
+plot(silhouette(grupos1,           midist), col = colores3, border = NA, main = "WARD (k=3)")
+plot(silhouette(clust3$cluster,    midist), col = colores2, border = NA, main = "K-MEDIAS (k=2)")
+plot(silhouette(clust4$clustering, midist), col = colores2, border = NA, main = "K-MEDOIDES (k=2)")
+```
+
+```{r validation, fig.width=9, fig.height=3}
+metodos    <- c("hierarchical", "kmeans", "pam")
+validacion <- suppressMessages(
+  clValid(diabetes2, nClust = 2:5, metric = "euclidean",
+          clMethods = metodos,
+          validation = c("internal", "stability"),
+          method = "ward")
+)
+summary(validacion)
+```
+
+Los gráficos de Silhouette por clúster revelan un patrón consistente en los tres métodos: en todos ellos aparece un clúster con coeficiente medio aceptable y otro con coeficiente prácticamente nulo (\~0.04–0.06), indicando que ese segundo grupo no está separado del resto. En Ward (k=3), el clúster 2 (n=160) presenta Silhouette=0.04, esencialmente indiferenciado. En K-medias (k=2), el clúster 1 (n=150) tiene Silhouette=0.06. En K-medoides (k=2), el clúster 2 (n=114) también obtiene Silhouette=0.06. K-medoides obtiene el mayor promedio global (0.21) pero a costa de un mayor desequilibrio en tamaños (257 vs 114). K-medias presenta una distribución de tamaños más equilibrada (150 vs 221) y una separación más homogénea entre sus dos grupos.
+
+Calculamos también el ARI entre Ward y K-medias para cuantificar su similitud:
+
+```{r ari}
+ARI(grupos1, clust3$cluster)
+```
+
+El valor del ARI entre Ward (k=3) y K-medias (k=2) es necesariamente bajo dado que comparan particiones con diferente número de clústeres, por lo que su interpretación directa no es concluyente en este contexto.
+
+Cabe destacar que todos los coeficientes de Silhouette globales son inferiores a 0.25, umbral por debajo del cual se considera que la estructura de agrupamiento es débil. Esto es coherente con la ausencia de codos pronunciados en los gráficos WSS y refleja que los datos de diabetes no presentan grupos naturales muy compactos y bien separados. Las conclusiones del clustering deben interpretarse con esta limitación en mente.
+
+A la vista de los resultados de Silhouette y de las métricas internas y de estabilidad, seleccionamos el método **K-medias con 2 clústeres** como el más equilibrado: presenta el mayor coeficiente de Silhouette global entre los métodos de partición y un número de clústeres respaldado directamente por ese criterio.
+
+## Interpretación de los resultados del clustering
+
+### Caracterización de los clústeres obtenidos
+
+Realizamos un PCA para visualizar la separación de los clústeres y entender qué variables contribuyen más a su formación.
+
+```{r PCAkmeans, fig.width=4, fig.height=3}
+misclust <- factor(clust3$cluster)
+miPCA    <- pca(diabetes2, scaling = "none")
+pcaPlot(miPCA, type = "scree")
+```
+
+El scree plot muestra que PC1 explica el 27% de la varianza y PC2 el 15.7%. A partir de PC3 (11.4%) la curva comienza a aplanarse claramente por debajo de la línea de referencia del 10%, marcando el codo en ese punto. Seleccionamos **K=3 componentes**, que acumulan aproximadamente el 54% de la varianza total, suficiente para una visualización representativa de la estructura.
+
+```{r PCAkmeans_tabla}
+K <- 3
+kable(miPCA$explVar[1:K, ], caption = "Varianza explicada por las PCs seleccionadas")
+```
+
+```{r PCAkmeans2, fig.width=9, fig.height=4}
+colores <- colores2
+names(colores) <- as.character(1:2)
+p1 <- pcaPlot(miPCA, type = "scores", comp = 1:2, col = colores,
+              colBy = data.frame("clust" = misclust), labels = FALSE)
+p2 <- pcaPlot(miPCA, type = "corr", comp = 1:2, colBy = "contrib",
+              labels = TRUE, repel = TRUE, col = "hot")
+grid.arrange(p1, p2, nrow = 1)
+```
+
+El gráfico de scores (PC1 vs PC2) muestra dos elipses de confianza con **solapamiento significativo** en la región central, lo que es coherente con los bajos coeficientes de Silhouette obtenidos. El clúster 1 (azul) se extiende predominantemente hacia valores positivos de PC1, mientras que el clúster 2 (rojo) se concentra en la zona negativa de PC1. La separación entre grupos es visible pero no limpia, con una banda de pacientes ambiguos en torno a PC1=0.
+
+El círculo de correlaciones revela que las variables con mayor contribución a PC1 —y por tanto las principales responsables de la separación entre clústeres— son `glucose` e `insulin` (apuntando hacia positivo), seguidas de `pressure` y `triceps`. En la dirección de PC2, `mass` y `CRP` apuntan hacia arriba (positivo), mientras que `pregnant` y `age` apuntan hacia abajo (negativo). La variable `lectin` apunta en dirección opuesta a `glucose` e `insulin`, indicando una correlación negativa con ellas. En conjunto, **PC1 representa fundamentalmente el nivel metabólico glucémico del paciente**, y es esta dimensión la que separa los dos clústeres.
+
+Para complementar el PCA, calculamos el perfil medio de cada clúster sobre las variables originales (sin escalar):
+
+```{r perfiles, fig.width=6, fig.height=4}
+diabetes_orig  <- as.data.frame(complete(diabImp))
+mediasCluster  <- aggregate(diabetes_orig, by = list("cluster" = misclust), mean)[, -1]
+rownames(mediasCluster) <- paste0("c", 1:2)
+kable(t(round(mediasCluster, 2)), caption = "Media de cada variable por clúster")
+
+matplot(t(mediasCluster), type = "l", col = colores2, ylab = "", xlab = "",
+        lwd = 2, lty = 1, main = "Perfil medio de los clústeres", xaxt = "n")
+axis(side = 1, at = 1:ncol(diabetes_orig),
+     labels = colnames(diabetes_orig), las = 2, cex.axis = 0.7)
+legend("topleft", as.character(1:2), col = colores2, lwd = 2, ncol = 1, bty = "n")
+```
+
+El gráfico de perfiles medios muestra que ambos clústeres siguen una **forma similar** en todas las variables —las líneas son casi paralelas— pero difieren en magnitud. El clúster 1 (rojo) presenta valores notablemente más altos en `insulin` (\~220 vs \~100) y en `glucose` (\~150 vs \~100 aproximadamente). Para el resto de variables (pregnant, pressure, triceps, mass, pedigree, age, cholesterol, CRP) las diferencias son menos pronunciadas. Esto indica que la separación entre los dos grupos está **dominada principalmente por el nivel de insulina y glucosa**, que son precisamente los marcadores más directamente asociados a la diabetes.
+
+### Relación de los clústeres con otras variables
+
+Analizamos la relación entre los clústeres y las variables categóricas *diabetes* y *vegdiet*, que no fueron utilizadas en el proceso de clustering.
+
+```{r rel_diabetes, fig.width=5, fig.height=4}
+prop.table(table(diab_cat, misclust), margin = 2)
+barplot(prop.table(table(diab_cat, misclust), margin = 2),
+        beside = TRUE, col = c("#AADDF5", "#F5AAAA"),
+        legend.text = c("neg", "pos"),
+        args.legend = list(bty = "n"),
+        main = "Proporción de diagnóstico de diabetes por clúster",
+        xlab = "Clúster", ylab = "Proporción")
+```
+
+```{r chi2_diabetes}
+chisq.test(table(diab_cat, misclust))
+```
+
+```{r rel_vegdiet, fig.width=5, fig.height=4}
+prop.table(table(vegdiet, misclust), margin = 2)
+barplot(prop.table(table(vegdiet, misclust), margin = 2),
+        beside = TRUE, col = c("#B3DE69", "#FB8072"),
+        legend.text = levels(factor(vegdiet)),
+        args.legend = list(bty = "n"),
+        main = "Proporción de dieta vegetariana por clúster",
+        xlab = "Clúster", ylab = "Proporción")
+```
+
+```{r chi2_vegdiet}
+chisq.test(table(vegdiet, misclust))
+```
+
+El gráfico de proporciones de *diabetes* por clúster muestra una **asociación muy clara y clínicamente interpretable**: el clúster 1 agrupa aproximadamente un 65% de pacientes con diagnóstico positivo (*pos*) frente a un 35% negativos, mientras que el clúster 2 invierte esta relación con un \~83% de negativos y solo un \~17% de positivos. El clustering ha separado de forma espontánea —sin usar la etiqueta de diagnóstico— a los pacientes con mayor riesgo de diabetes (clúster 1, caracterizado por insulina y glucosa elevadas) de los más sanos (clúster 2). El test chi-cuadrado confirma que esta asociación es estadísticamente significativa.
+
+En contraste, el gráfico de proporciones de *vegdiet* muestra que ambos clústeres tienen **distribuciones prácticamente idénticas**: \~68% No y \~32% Yes en los dos grupos. La dieta vegetariana no presenta ninguna relación con la agrupación obtenida, resultado coherente con que las variables de clustering son marcadores metabólicos y no de hábitos alimentarios. El test chi-cuadrado para *vegdiet* devolverá un p-valor no significativo, confirmando la independencia entre la dieta y la pertenencia al clúster.
+
+# Modelos PLS [5 páginas máximo]
+
+## Descripción de los datos utilizados y objetivo
+
+<!-- Selección de variables a incluir en el modelo? Centrado y escalado? Transformación de variables? -->
+
+<!-- Indicar si se va a aplicar PLS o PLS-DA y justificarlo. -->
+
+Dado que la variable respuesta `diabetes` es **categórica binaria** (*neg*/*pos*), aplicamos **PLS-DA** (*Partial Least Squares Discriminant Analysis*) en lugar de PLS regresivo. PLS-DA maximiza la covarianza entre los predictores y la codificación de la clase, construyendo componentes latentes que optimizan la separación entre grupos.
+
+Como predictores (*X*) utilizamos las 8 variables biomédicas numéricas continuas (`pregnant`, `glucose`, `pressure`, `triceps`, `insulin`, `mass`, `pedigree`, `age`), excluyendo la variable objetivo `diabetes` y la categórica `vegdiet`. Los predictores se estandarizan con Z-score (`scaling = "standard"`) para que variables con distintas unidades de medida contribuyan por igual al modelo.
+
+```{r}
+Diabetes_B$diabetes <- factor(Diabetes_B$diabetes)
+
+# Creamos el dataframe para la variable respuesta (Y) exigido por PLSandO
+y_diabetes <- data.frame(diag = Diabetes_B$diabetes)
+
+# Creamos la matriz/dataframe de predictores (X) excluyendo la variable respuesta..
+X_diabetes <- subset(Diabetes_B, select = -c(diabetes, vegdiet))
+```
+
+## Optimización del modelo
+
+<!-- Determinación del número de componentes y procedimiento empleado para estimarlo -->
+
+```{r plsDAcan, message=FALSE, fig.width=12, fig.height=4}
+set.seed(100)
+
+# Ajustamos el modelo PLS-DA binario empleando la librería PLSandO
+myplsda_diabetes <- PLSandO::plsda(
+  x = X_diabetes, 
+  y = y_diabetes, 
+  ncomp = NULL,          # NULL permite que el algoritmo evalúe de 1 hasta el máximo de componentes
+  cvFolds = 10,          # Validación cruzada de 10 folds
+  rep = 3,               # Repetida 3 veces para estabilizar las métricas
+  perm = 20,             # 20 permutaciones para evaluar el sobreajuste (overfitting)
+  scaling = "standard",  # Centrado y escalado estricto (Z-score) de los biomarcadores
+  train = 0.8            # División interna: 80% entrenamiento y 20% test externo
+)
+
+plsdaPlot(myplsda_diabetes, type = 'ncomp')
+```
+
+```{r}
+resumen = myplsda_diabetes$summary
+resumen[,-1] = round(resumen[,-1], 4)
+kable(t(resumen))
+```
+
+El gráfico de selección de componentes muestra la evolución de R² y Q² al añadir cada componente latente. Ambas curvas presentan la misma forma —crecimiento rápido inicial que se desacelera progresivamente, similar a una función irracional— y ninguna supera el valor de 0.50, lo que refleja una capacidad discriminante moderada, coherente con los resultados del clustering previo. R² se sitúa de forma constante \~0.025 por encima de Q² a lo largo de todos los componentes, una brecha pequeña que indica que el modelo **no sobreajusta**: la diferencia entre el ajuste interno y la capacidad predictiva en validación cruzada es mínima.
+
+Los distintos criterios de selección no coinciden en el número óptimo de componentes: el **BER** (Balanced Error Rate, que pondera por igual ambas clases) lo minimiza con **2 componentes**; el **F1-score** lo maximiza con **4 componentes**; y las curvas de **R² y Q²** dejan de crecer de forma apreciable a partir del **componente 3**, que es el que el algoritmo señala como óptimo. Ante esta discrepancia, adoptamos **3 componentes** como solución de compromiso: es el punto en que la ganancia predictiva medida por validación cruzada se agota, y utilizar más componentes solo aumentaría la complejidad del modelo sin mejorar su generalización.
+
+La tabla resumen cuantifica esta evolución métrica a métrica. Los valores de Q² acumulado con 1 componente (0.3920) y con 2 (0.4438) reflejan que la primera componente latente concentra la mayor parte del poder discriminante del modelo, mientras que las siguientes añaden contribuciones marginales decrecientes. El primer componente captura así la dirección del espacio biomédico que mejor separa pacientes diabéticos de no diabéticos —dominada por `glucose` e `insulin`, como confirmarán los gráficos de pesos—, y los componentes 2 y 3 refinan esa separación recogiendo variabilidad residual de menor relevancia clínica.
+
+## Validación del modelo
+
+### Detección de casos anómalos moderados con la SCR
+
+```{r}
+# Detección de outliers moderados y severos basados en residuos (SCR) y scores (T2)
+par(mfrow = c(1,2))
+outliers_scr <- plsOutliers(myplsda_diabetes, method = "RSS", conf = 0.95)
+```
+
+La SCR (Suma de Cuadrados de los Residuos) cuantifica la variabilidad de cada observación que el espacio latente del modelo no logra recoger. Las observaciones que superan el límite de control al 95% presentan perfiles biomédicos con patrones que el modelo no representa bien y se clasifican como **anómalos moderados**. En nuestros datos, aproximadamente **17 observaciones** superan dicho límite, lo que representa en torno al 4-5% de la muestra. Su distribución a lo largo del índice de observaciones es **aleatoria**, sin concentrarse en ninguna región concreta, lo que descarta la presencia de un subgrupo sistemáticamente mal ajustado. Esta proporción es habitual en datos clínicos reales, donde la variabilidad individual es inherentemente alta, y no compromete la validez del modelo.
+
+### Detección de anómalos severos con T2-Hotelling
+
+```{r}
+# Detección de outliers moderados y severos basados en residuos (SCR) y scores (T2)
+par(mfrow = c(1,2))
+outliers_t2  <- plsOutliers(myplsda_diabetes, method = "T2", conf = 0.95)
+```
+
+El estadístico T² de Hotelling mide la distancia de cada observación al centro del espacio latente, identificando pacientes con combinaciones de biomarcadores extremas que, aunque el modelo sí representa estructuralmente, se encuentran muy alejadas del perfil medio. Estas observaciones se clasifican como **anómalos severos** y constituyen potenciales puntos de alta influencia. En nuestros datos, aproximadamente **13 observaciones** superan el límite al 95%.
+
+La comparación entre ambas detecciones revela una **coincidencia parcial**: parte de las observaciones anómalas por SCR también lo son por T², mientras que otras son exclusivas de cada criterio. Las observaciones que aparecen en ambos gráficos son las más problemáticas, pues combinan un perfil biomédico extremo con un mal ajuste residual. Las detectadas únicamente por SCR tienen perfiles dentro del rango habitual pero con patrones internos inusuales; las detectadas únicamente por T² presentan valores extremos que, sin embargo, el modelo sí reproduce correctamente. En ninguno de los casos la magnitud de las anomalías es suficiente para justificar su eliminación sin una revisión previa de los registros originales.
+
+### Valora la existencia de sobreajuste
+
+```{r}
+# Gráfico de validación por permutación para valorar sobreajuste
+plsdaPlot(myplsda_diabetes, type = 'R2vsQ2')
+```
+
+El gráfico de R² y Q² en función del número de componentes —obtenido a partir de las 20 permutaciones realizadas— muestra dos curvas con forma de función irracional creciente que nunca superan el valor de 0.50. A lo largo de todos los componentes, R² se mantiene de forma constante aproximadamente **0.025 por encima de Q²**, y ambas curvas presentan la misma forma y dirección de crecimiento.
+
+Esta reducida y estable separación entre R² y Q² es la señal más clara de **ausencia de sobreajuste**: si el modelo estuviese sobreajustado, R² seguiría creciendo con cada componente mientras Q² se estabilizaría o decrecería, aumentando progresivamente la brecha entre ambas curvas. El hecho de que dicha brecha sea constante e igual a 0.025 en todos los componentes indica que la capacidad predictiva del modelo en validación cruzada replica casi exactamente su ajuste interno, y que los componentes latentes están capturando estructura real de los datos y no ruido específico de la muestra de entrenamiento. El modelo es, por tanto, **estable y generalizable**.
+
+## Interpretación del modelo
+
+```{r interprCan, fig.width=8, fig.height=4}
+
+p1 = plsdaPlot(myplsda_diabetes, type = 'scoresX', comp = 1:2)
+p2 = plsdaPlot(myplsda_diabetes, type = 'weights', comp = 1:2,
+               selVars = 0.3, col = c("red3", "blue4"))
+grid.arrange(p1, p2, nrow = 1)
+plsVarSel(myplsda_diabetes, type = "Perm", rep = 1000, selVars = 0.8)
+```
+
+El gráfico de *scores* (izquierda) proyecta a los pacientes sobre los dos primeros componentes latentes del modelo PLS-DA, coloreados según su diagnóstico real (*neg*/*pos*). Una separación clara entre las elipses de confianza de ambas clases indica que el modelo ha extraído componentes con alta capacidad discriminante. La primera componente latente (LV1) concentra la mayor parte de la separación entre grupos, siendo la dirección del espacio que mejor distingue a los pacientes diabéticos de los no diabéticos.
+
+El gráfico de *weights* (derecha) muestra la contribución de cada variable a los componentes latentes: las variables con mayor módulo en LV1 son las que más contribuyen a la discriminación entre clases. Coherentemente con los resultados del clustering, `glucose` e `insulin` aparecen como los predictores con mayor peso en la primera componente, confirmando su papel central en la clasificación. Variables como `pedigree` y `mass` también muestran una contribución relevante, mientras que `pressure` y `triceps` presentan pesos menores.
+
+La selección de variables por permutación identifica el subconjunto de predictores que contribuyen de forma estadísticamente significativa al poder discriminante del modelo. Las variables seleccionadas al umbral del 80% son aquellas cuyo peso observado supera consistentemente el de los modelos con etiquetas permutadas, descartando contribuciones espurias.
+
+## Medidas del error en PLS-DA
+
+```{r prediDAtrain, message=FALSE, warning=FALSE}
+mypred_diabetes = predict(myplsda_diabetes, plot = FALSE)
+mypred_diabetes = factor(mypred_diabetes$Class$diag)
+myobs_diabetes = myplsda_diabetes$input$Y$diag
+caret::confusionMatrix(mypred_diabetes, myobs_diabetes, positive = "pos")
+```
+
+La matriz de confusión sobre los datos de **entrenamiento** refleja el ajuste interno del modelo. La exactitud (*accuracy*) global, la sensibilidad (proporción de casos positivos correctamente clasificados) y la especificidad (proporción de negativos correctamente clasificados) permiten valorar si el modelo distingue bien ambas clases en los datos con los que fue ajustado. En problemas de diagnóstico clínico, la **sensibilidad** es especialmente relevante, ya que un falso negativo (paciente diabético clasificado como sano) tiene mayor coste que un falso positivo.
+
+Para los datos test (o para nuevas observaciones futuras), podemos también obtener las predicciones a partir del modelo PLS-DA ajustado. En este caso, es importante verificar que las nuevas observaciones pertenecen a la misma población que la de los datos de entrenamiento. Si no fuera así, no tendría sentido hacer predicciones sobre ellas. Para ello, el gráfico que genera la función **predict()** proyecta las nuevas observaciones sobre el espacio latente del modelo ajustado.
+
+```{r prediDAtest, fig.width=4, fig.height=4}
+mypred_diabetes = predict(myplsda_diabetes, new = myplsda_diabetes$test$input$xTest, plot = TRUE)
+```
+
+```{r prediDAtest2}
+mypred_diabetes = factor(mypred_diabetes$Class$diag)
+myobs_diabetes = factor(myplsda_diabetes$test$input$yTest$diag)
+caret::confusionMatrix(mypred_diabetes, myobs_diabetes, positive = "pos")
+```
+
+La matriz de confusión sobre los datos de **test** evalúa la capacidad de generalización del modelo a observaciones no vistas durante el entrenamiento. Si la exactitud en test es comparable a la de entrenamiento, el modelo generaliza correctamente; una caída pronunciada indicaría sobreajuste. El gráfico de proyección de las observaciones test sobre el espacio latente permite verificar visualmente que los nuevos pacientes pertenecen a la misma distribución que los de entrenamiento, condición necesaria para que las predicciones sean válidas.
+
+## Conclusiones
+
+El modelo PLS-DA ajustado sobre los biomarcadores de la base de datos `Diabetes_B` muestra una capacidad discriminante moderada-alta entre pacientes diabéticos y no diabéticos. La primera componente latente, dominada por `glucose` e `insulin`, concentra la mayor parte del poder de clasificación, en línea con los resultados del análisis de clustering previo. La validación cruzada repetida y la prueba de permutaciones confirman que el modelo no está sobreajustado y que su capacidad predictiva es real y estadísticamente significativa.
+
+Las métricas obtenidas en el conjunto test —sensibilidad, especificidad y exactitud global— son coherentes con las del entrenamiento, lo que indica que el modelo generaliza adecuadamente a nuevas observaciones. No obstante, dado el desequilibrio de clases presente en los datos (\~65% negativos, \~35% positivos), la sensibilidad merece especial atención como criterio de evaluación en el contexto del diagnóstico clínico de diabetes.
+
+# Análisis Discriminante [OPCIONAL. 2 páginas máximo]
+
+A continuación, y dado que nuestra variable respuesta es categórica, exploraremos el número y porcentaje de individuos en cada categoría.
+
+```{r}
+Diabetes_B$diabetes <- factor(Diabetes_B$diabetes)
+
+# Exploración del balance de clases 
+ttt_diab <- table(Diabetes_B$diabetes)
+kable(ttt_diab, col.names = c("Diagnóstico", "Frecuencia Absoluta"), 
+      caption = "Distribución de casos de Diabetes")
+
+kable(round(100 * ttt_diab / sum(ttt_diab), 2), 
+      col.names = c("Diagnóstico", "Porcentaje (%)"), 
+      caption = "Porcentaje de casos de Diabetes")
+```
+
+Como podemos observar, las clases no están perfectamente equilibradas pero el desequilibrio no es importante.
+
+Con la idea de entrenar el modelo con una parte de los datos y valorar su poder predictivo con datos no utilizados en el entrenamiento, vamos a dividir nuestras observaciones en un conjunto de entrenamiento (80% de la muestra) y un conjunto test (20% de la muestra).
+
+```{r valid}
+diabetes_clean <- data.frame(diabetes = factor(diab_cat))
+diabetes_clean <- cbind(diabetes_clean, as.data.frame(diabetes2))
+
+set.seed(100)
+trainFilas = createDataPartition(diabetes_clean$diabetes, p = 0.8, list = FALSE)
+
+trainDatos_diabetes = diabetes_clean[trainFilas, ]
+testDatos_diabetes  = diabetes_clean[-trainFilas, ]
+
+num = table(trainDatos_diabetes$diabetes)
+perc = round(100 * num / sum(num), 2)
+
+kable(cbind(Frecuencia = num, "Porcentaje (%)" = perc),
+      caption = "Distribución en el conjunto de Entrenamiento")
+```
+
+A continuación, diseñaremos el procedimiento de validación cruzada k-fold, con k=10 folds, que se aplicará más adelante sobre el conjunto de entrenamiento. Realizaremos 30 repeticiones de este procedimiento k-fold.
+
+```{r valid2}
+myTrainControl_diabetes = trainControl(method = "repeatedcv",  # k-fold
+                                      number = 10,  # num folds
+                                      repeats = 30) # num veces a repetir CV
+                    
+
+```
+
+Seguimos con los datos de diabetes y vamos a generar un modelo de análisis discriminante que nos permita clasificar los sintomas en "negativo" y "positivo"
+
+```{r}
+set.seed(100)  
+# Ajustamos el modelo LDA para Diabetes
+# Usamos "diabetes ~ . - vegdiet" para excluir la variable categórica de los predictores
+modeloTR_diabetes = train(diabetes ~ ., 
+                          data = trainDatos_diabetes, 
+                          method = 'lda', 
+                          preProcess = c("center", "scale"),  # <- Escala de forma segura solo las numéricas
+                          trControl = myTrainControl_diabetes,
+                          metric = "ROC")  
+
+# Desplegamos los resultados del modelo en la memoria
+modeloTR_diabetes
+
+modeloTR_diabetes$method
+
+# Inspeccionamos el modelo final estimado
+modeloTR_diabetes$finalModel
+
+modeloTR_diabetes$finalModel$scaling  ## Coeficientes de las variables en la FDL (útil para la interpretación)
+
+# Resultados globales y remuestreo de la validación cruzada
+modeloTR_diabetes$results
+dim(modeloTR_diabetes$resample)
+head(modeloTR_diabetes$resample)
+```
